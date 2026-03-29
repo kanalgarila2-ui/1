@@ -1,0 +1,113 @@
+name: Build VerySchool APKs
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-client:
+    name: Build Client APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-client-${{ hashFiles('client/**/*.gradle*', 'client/**/libs.versions.toml') }}
+          restore-keys: ${{ runner.os }}-gradle-client-
+
+      - name: Download gradle-wrapper.jar if missing
+        run: |
+          JAR="client/gradle/wrapper/gradle-wrapper.jar"
+          if [ ! -f "$JAR" ]; then
+            echo "gradle-wrapper.jar not found, downloading..."
+            curl -fsSL "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar" -o "$JAR"
+            echo "Downloaded successfully"
+          else
+            echo "gradle-wrapper.jar already exists, skipping"
+          fi
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x client/gradlew
+
+      - name: Build Client Debug APK
+        run: |
+          python3 make_icons.py client 108 92 231
+          cd client
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload Client APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VerySchool-Client-APK
+          path: client/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+  build-server:
+    name: Build Server (Admin) APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-server-${{ hashFiles('server/**/*.gradle*', 'server/**/libs.versions.toml') }}
+          restore-keys: ${{ runner.os }}-gradle-server-
+
+      - name: Download gradle-wrapper.jar if missing
+        run: |
+          JAR="server/gradle/wrapper/gradle-wrapper.jar"
+          if [ ! -f "$JAR" ]; then
+            echo "gradle-wrapper.jar not found, downloading..."
+            curl -fsSL "https://github.com/gradle/gradle/raw/v8.7.0/gradle/wrapper/gradle-wrapper.jar" -o "$JAR"
+            echo "Downloaded successfully"
+          else
+            echo "gradle-wrapper.jar already exists, skipping"
+          fi
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x server/gradlew
+
+      - name: Build Server Debug APK
+        run: |
+          python3 make_icons.py server 0 184 148
+          cd server
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload Server APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VerySchool-Server-Admin-APK
+          path: server/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
