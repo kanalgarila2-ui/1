@@ -20,10 +20,12 @@ class AppRepository(
     private var apiClient: ApiClient? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // Единый flow статуса — создаём один раз и держим
+    private val _connected = MutableStateFlow(false)
+    val connected: StateFlow<Boolean> = _connected.asStateFlow()
+
     val chats = db.chatDao().getAllChats()
     val users = db.userDao().getAllUsers()
-
-    val connected get() = wsClient?.connected ?: MutableStateFlow(false)
 
     fun getMessages(chatId: String) = db.messageDao().getMessages(chatId)
 
@@ -33,36 +35,72 @@ class AppRepository(
 
     fun getApiClient() = apiClient
 
-    fun startWsConnection(serverUrl: String, token: String) {
+    /**
+     * Запускает WebSocket соединение с авто-переподключением.
+     * Возвращает Job который можно отменить.
+     */
+    fun startWsConnection(serverUrl: String, token: String): Job {
+        // Отключаем старый клиент
         wsClient?.disconnect()
-        wsClient = WsClient()
+        _connected.value = false
+
+        val client = WsClient()
+        wsClient = client
+
+        // Подписываемся на статус подключения нового клиента
         scope.launch {
-            wsClient!!.connect(serverUrl, token)
+            client.connected.collect { isConnected ->
+                _connected.value = isConnected
+                Log.d(TAG, "Connection status: $isConnected")
+            }
         }
+
+        // Подписываемся на входящие сообщения
         scope.launch {
-            delay(300)
-            wsClient?.incomingMessages?.collect { msg ->
+            client.incomingMessages.collect { msg ->
                 handleIncoming(msg)
+            }
+        }
+
+        // Запускаем соединение с авто-переподключением
+        return scope.launch {
+            while (isActive) {
+                Log.d(TAG, "Starting WS connection to $serverUrl")
+                try {
+                    client.connect(serverUrl, token)
+                } catch (e: CancellationException) {
+                    break
+                } catch (e: Exception) {
+                    Log.e(TAG, "WS connect error: ${e.message}")
+                }
+
+                if (!isActive) break
+
+                // Ждём перед переподключением
+                Log.d(TAG, "WS disconnected, reconnecting in 3s...")
+                delay(3000)
             }
         }
     }
 
     private suspend fun handleIncoming(msg: WsMessage) {
         try {
+            Log.d(TAG, "Handling: ${msg.type}")
             when (msg.type) {
                 WsTypes.USER_LIST -> {
                     val users = Json.decodeFromString<List<UserDto>>(msg.payload)
+                    Log.d(TAG, "Received ${users.size} users")
                     db.userDao().upsertUsers(users.map { it.toEntity() })
                 }
                 WsTypes.CHAT_LIST -> {
                     val chats = Json.decodeFromString<List<ChatDto>>(msg.payload)
+                    Log.d(TAG, "Received ${chats.size} chats")
                     db.chatDao().upsertChats(chats.map { it.toEntity() })
                 }
                 WsTypes.MESSAGE_HISTORY -> {
                     val msgs = Json.decodeFromString<List<MessageDto>>(msg.payload)
-                    if (msgs.isNotEmpty()) {
-                        db.messageDao().upsertMessages(msgs.map { it.toEntity() })
-                    }
+                    Log.d(TAG, "Received ${msgs.size} messages history")
+                    if (msgs.isNotEmpty()) db.messageDao().upsertMessages(msgs.map { it.toEntity() })
                 }
                 WsTypes.NEW_MESSAGE -> {
                     val m = Json.decodeFromString<MessageDto>(msg.payload)
@@ -87,22 +125,29 @@ class AppRepository(
                 }
                 WsTypes.GROUP_CREATED -> {
                     val c = Json.decodeFromString<ChatDto>(msg.payload)
+                    Log.d(TAG, "New chat created: ${c.name}")
                     db.chatDao().upsertChat(c.toEntity())
-                }
-                WsTypes.ERROR -> {
-                    Log.e(TAG, "Server error: ${msg.payload}")
-                }
-                WsTypes.PING -> sendWs(WsMessage(WsTypes.PONG))
-                WsTypes.BANNED -> {
-                    Log.w(TAG, "User banned: ${msg.payload}")
                 }
                 WsTypes.USER_UPDATED -> {
                     val u = Json.decodeFromString<UserDto>(msg.payload)
                     db.userDao().upsertUser(u.toEntity())
                 }
+                WsTypes.BANNED -> {
+                    Log.w(TAG, "Banned: ${msg.payload}")
+                }
+                WsTypes.ERROR -> {
+                    Log.e(TAG, "Server error: ${msg.payload}")
+                }
+                WsTypes.PING -> sendWs(WsMessage(WsTypes.PONG))
+                WsTypes.AUTH_OK -> {
+                    Log.d(TAG, "Auth OK!")
+                }
+                WsTypes.AUTH_FAIL -> {
+                    Log.e(TAG, "Auth FAILED: ${msg.payload}")
+                }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Handle error ${msg.type}: ${e.message}")
+            Log.e(TAG, "Handle error [${msg.type}]: ${e.message}")
         }
     }
 
@@ -131,13 +176,8 @@ class AppRepository(
         )))
     }
 
-    suspend fun sendTyping(chatId: String) {
-        sendWs(WsMessage(WsTypes.TYPING, chatId))
-    }
-
-    suspend fun sendTypingStop(chatId: String) {
-        sendWs(WsMessage(WsTypes.TYPING_STOP, chatId))
-    }
+    suspend fun sendTyping(chatId: String) = sendWs(WsMessage(WsTypes.TYPING, chatId))
+    suspend fun sendTypingStop(chatId: String) = sendWs(WsMessage(WsTypes.TYPING_STOP, chatId))
 
     private suspend fun sendWs(msg: WsMessage) {
         wsClient?.send(msg)
@@ -145,10 +185,11 @@ class AppRepository(
 
     fun disconnect() {
         wsClient?.disconnect()
+        _connected.value = false
     }
 
-    // Converters
-    private fun ChatDto.toEntity() = ChatEntity(id, name, isGroup, Json.encodeToString(members), avatarBase64, lastMessage, lastMessageTime, 0)
+    // ── Converters ────────────────────────────────────────────────────────────
+    private fun ChatDto.toEntity() = ChatEntity(id, name, isGroup, Json.encodeToString(members), avatarBase64, lastMessage, lastMessageTime, 0, isBot)
     private fun MessageDto.toEntity() = MessageEntity(id, chatId, senderId, senderName, text, timestamp, Json.encodeToString(reactions), imageBase64)
     private fun UserDto.toEntity() = UserEntity(id, username, displayName, avatarBase64, online)
 }

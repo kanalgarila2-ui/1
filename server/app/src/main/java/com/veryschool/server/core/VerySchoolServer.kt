@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalStdlibApi::class)
-
 package com.veryschool.server.core
 
 import android.util.Log
@@ -43,8 +41,8 @@ import java.util.concurrent.ConcurrentHashMap
 @Serializable data class ChangePasswordRequest(val oldPassword: String, val newPassword: String)
 @Serializable data class CheckUsernameResponse(val exists: Boolean)
 @Serializable data class ServerStatsDto(val users: Int, val chats: Int, val messages: Int, val online: Int)
-@Serializable data class BanRequest(val userId: String, val durationMinutes: Long = 0, val reason: String = "")
-@Serializable data class BotMessageRequest(val text: String, val targetUserId: String = "")
+@Serializable data class BanRequest(val userId: String, val durationMinutes: Long = 0, val reason: String = "") // 0 = permanent
+@Serializable data class BotMessageRequest(val text: String, val targetUserId: String = "") // empty = all users
 
 object WsTypes {
     const val AUTH = "auth"; const val AUTH_OK = "auth_ok"; const val AUTH_FAIL = "auth_fail"
@@ -156,7 +154,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
 
         // ── Register
         post("/auth/register") {
-            val ip = call.request.local.remoteAddress ?: "unknown"
+            val ip = call.request.origin.remoteHost
             val req = call.receive<RegisterRequest>()
             log("🔌 Register attempt from $ip: @${req.username}")
             if (req.passphrase != "22sch") { call.respond(AuthResponse(false, error = "Неверная ключевая фраза")); return@post }
@@ -169,6 +167,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             db.userDao().upsert(user)
             val token = generateToken()
             db.tokenDao().insert(TokenEntity(token, userId))
+            // Create bot chat for new user
             createBotChat(userId)
             logIp(ip, userId, "REGISTER")
             log("👤 Registered: @${req.username} ID=$userId from $ip")
@@ -179,7 +178,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
 
         // ── Login
         post("/auth/login") {
-            val ip = call.request.local.remoteAddress ?: "unknown"
+            val ip = call.request.origin.remoteHost
             val req = call.receive<AuthRequest>()
             log("🔐 Login attempt from $ip: @${req.username}")
             if (req.passphrase != "22sch") { call.respond(AuthResponse(false, error = "Неверная ключевая фраза")); return@post }
@@ -189,6 +188,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                 log("❌ Failed login: @${req.username} from $ip", "WARN")
                 call.respond(AuthResponse(false, error = "Неверный логин или пароль")); return@post
             }
+            // Check ban
             if (user.isBanned && (user.banUntil == 0L || user.banUntil > System.currentTimeMillis())) {
                 val msg = if (user.banUntil == 0L) "Вы заблокированы навсегда. Причина: ${user.banReason}"
                           else "Вы заблокированы до ${java.text.SimpleDateFormat("dd.MM HH:mm").format(Date(user.banUntil))}. Причина: ${user.banReason}"
@@ -212,6 +212,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(HttpStatusCode.OK)
         }
 
+        // ── Users list (ALL users for discovery)
         get("/users") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val users = db.userDao().getAll().map { it.toDto(connections.isOnline(it.id)) }
@@ -219,6 +220,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(users)
         }
 
+        // ── Search users
         get("/users/search") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val q = call.request.queryParameters["q"]?.lowercase() ?: ""
@@ -228,6 +230,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(users)
         }
 
+        // ── Get user by ID
         get("/user/{id}") {
             call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val targetId = call.parameters["id"] ?: run { call.respond(HttpStatusCode.BadRequest); return@get }
@@ -235,6 +238,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(user.toDto(connections.isOnline(user.id)))
         }
 
+        // ── Update profile
         put("/user/profile") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@put }
             val req = call.receive<UpdateProfileRequest>()
@@ -268,6 +272,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(db.messageDao().getForChat(chatId).map { it.toDto() })
         }
 
+        // ── IP logs
         get("/admin/iplogs") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val user = db.userDao().getById(userId)
@@ -276,6 +281,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(logs.map { mapOf("ip" to it.ip, "userId" to it.userId, "action" to it.action, "time" to it.timestamp) })
         }
 
+        // ── Admin: ban user
         post("/admin/ban") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
@@ -286,10 +292,12 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             val target = db.userDao().getById(req.userId)
             val durStr = if (until == 0L) "навсегда" else "${req.durationMinutes} мин"
             log("🚫 @${target?.username} BANNED by admin for $durStr. Reason: ${req.reason}", "WARN")
+            // Kick from WS
             connections.sendTo(req.userId, WsMessage(WsTypes.BANNED, "Вы заблокированы. Причина: ${req.reason}"))
             call.respond(mapOf("success" to true))
         }
 
+        // ── Admin: unban
         post("/admin/unban") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
@@ -301,6 +309,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(mapOf("success" to true))
         }
 
+        // ── Admin: block DMs
         post("/admin/block-dm") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
@@ -324,12 +333,14 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(mapOf("success" to true))
         }
 
+        // ── Admin: send bot message
         post("/admin/bot-message") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
             if (admin?.isAdmin != true) { call.respond(HttpStatusCode.Forbidden); return@post }
             val req = call.receive<BotMessageRequest>()
             if (req.targetUserId.isEmpty()) {
+                // Send to ALL users
                 val allUsers = db.userDao().getAll()
                 allUsers.forEach { sendBotMessage(it.id, req.text) }
                 log("🤖 Bot broadcast to ${allUsers.size} users: ${req.text.take(50)}")
@@ -358,7 +369,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
         webSocket("/ws") {
             var authedUserId: String? = null
             var authedUser: UserEntity? = null
-            val ip = call.request.local.remoteAddress ?: "unknown"
+            val ip = call.request.origin.remoteHost
             log("🔌 New WS connection from $ip")
 
             try {
@@ -376,6 +387,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                             }
                             val user = db.userDao().getById(tokenEntity.userId)
                             if (user == null) { close(); return@webSocket }
+                            // Check ban
                             if (user.isBanned && (user.banUntil == 0L || user.banUntil > System.currentTimeMillis())) {
                                 send(Frame.Text(json.encodeToString(WsMessage(WsTypes.BANNED, "Вы заблокированы: ${user.banReason}"))))
                                 close(); return@webSocket
@@ -388,10 +400,12 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
 
                             send(Frame.Text(json.encodeToString(WsMessage(WsTypes.AUTH_OK, json.encodeToString(user.toDto(true))))))
 
+                            // Send ALL users (critical for user discovery)
                             val allUsers = db.userDao().getAll().map { it.toDto(connections.isOnline(it.id)) }
                             log("📋 Sending ${allUsers.size} users to @${user.username}")
                             send(Frame.Text(json.encodeToString(WsMessage(WsTypes.USER_LIST, json.encodeToString(allUsers)))))
 
+                            // Send chats
                             val chats = db.chatDao().getForUser(user.id).map { it.toDto() }
                             log("💬 Sending ${chats.size} chats to @${user.username}")
                             send(Frame.Text(json.encodeToString(WsMessage(WsTypes.CHAT_LIST, json.encodeToString(chats)))))
@@ -403,11 +417,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                             val uid = authedUserId ?: continue
                             val user = authedUser ?: continue
                             val req = try { json.decodeFromString<SendMessageRequest>(msg.payload) } catch (_: Exception) { continue }
-                            val chat = db.chatDao().getById(req.chatId)
-                            if (chat == null) {
-                                sendError("Чат не найден")
-                                continue
-                            }
+                            val chat = db.chatDao().getById(req.chatId) ?: run { sendError("Чат не найден"); continue }
                             val members = try { json.decodeFromString<List<String>>(chat.members) } catch (_: Exception) { emptyList() }
                             if (uid !in members) { sendError("Нет доступа"); continue }
                             if (req.text.isBlank() && req.imageBase64.isBlank()) continue
@@ -425,17 +435,10 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                         WsTypes.MESSAGE_HISTORY -> {
                             val uid = authedUserId ?: continue
                             val chatId = msg.payload.trim()
-                            val chat = db.chatDao().getById(chatId) 
-                            if (chat == null) continue
-                            val members = try {
-                                json.decodeFromString<List<String>>(chat.members) 
-                            } catch (_: Exception) { 
-                                emptyList() 
-                            }
+                            val chat = db.chatDao().getById(chatId) ?: continue
+                            val members = try { json.decodeFromString<List<String>>(chat.members) } catch (_: Exception) { emptyList() }
                             if (uid !in members) continue
-                            val msgs = db.messageDao().getForChat(chatId).map { 
-                                it.toDto() 
-                            }
+                            val msgs = db.messageDao().getForChat(chatId).map { it.toDto() }
                             log("📜 History for '${chat.name}': ${msgs.size} messages → @${authedUser?.username}")
                             send(Frame.Text(json.encodeToString(WsMessage(WsTypes.MESSAGE_HISTORY, json.encodeToString(msgs)))))
                         }
@@ -458,36 +461,26 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                         WsTypes.CREATE_GROUP -> {
                             val uid = authedUserId ?: continue
                             val user = authedUser ?: continue
-                            val req = try { 
-                                json.decodeFromString<CreateGroupRequest>(msg.payload) 
-                            } catch (_: Exception) {
-                                continue
-                            }
+                            val req = try { json.decodeFromString<CreateGroupRequest>(msg.payload) } catch (_: Exception) { continue }
                             val allMembers = (req.memberIds + uid).distinct()
                             log("📁 CREATE_GROUP request by @${user.username}: name='${req.name}' members=$allMembers isDm=${req.isDm}")
 
+                            // DM: check DM block
                             if (req.isDm && allMembers.size == 2) {
                                 val otherId = allMembers.firstOrNull { it != uid }
                                 if (otherId != null) {
                                     val other = db.userDao().getById(otherId)
                                     if (other != null && other.dmBlocked &&
                                         (other.dmBlockUntil == 0L || other.dmBlockUntil > System.currentTimeMillis())) {
-                                        sendError("Этому пользователю нельзя писать в личку")
-                                        continue
+                                        sendError("Этому пользователю нельзя писать в личку"); continue
                                     }
                                 }
-                                
-                                var existing: ChatEntity? = null
-                                for (c in db.chatDao().getAll()) {
-                                    if (!c.isGroup) {
-                                        val m = try { json.decodeFromString<List<String>>(c.members) } catch (_: Exception) { emptyList() }
-                                        if (m.toSet() == allMembers.toSet()) {
-                                            existing = c
-                                            break
-                                        }
-                                    }
+                                // Check if DM already exists
+                                val existing = db.chatDao().getAll().firstOrNull { c ->
+                                    if (c.isGroup) return@firstOrNull false
+                                    val m = try { json.decodeFromString<List<String>>(c.members) } catch (_: Exception) { return@firstOrNull false }
+                                    m.toSet() == allMembers.toSet()
                                 }
-                                
                                 if (existing != null) {
                                     log("📁 DM already exists: ${existing.id}")
                                     allMembers.forEach { memberId ->

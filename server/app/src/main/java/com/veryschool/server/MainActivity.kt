@@ -37,38 +37,22 @@ class MainActivity : ComponentActivity() {
                 val chats by vm.chats.collectAsStateWithLifecycle()
                 val msgCount by vm.msgCount.collectAsStateWithLifecycle()
                 AdminDashboard(
-                    serverRunning = running,
-                    localIp = localIp,
-                    publicIp = publicIp,
-                    onlineCount = onlineCount,
-                    userCount = users.size,
-                    chatCount = chats.size,
-                    msgCount = msgCount,
-                    logs = logs,
-                    users = users,
-                    chats = chats,
-                    onStart = vm::startServer,
-                    onStop = vm::stopServer,
-                    onRestart = vm::restartServer,
-                    onDeleteUser = vm::deleteUser,
-                    onSetAdmin = vm::setAdmin,
-                    onBanUser = vm::banUser,
-                    onUnbanUser = vm::unbanUser,
-                    onBlockDm = vm::blockDm,
-                    onUnblockDm = vm::unblockDm,
+                    serverRunning = running, localIp = localIp, publicIp = publicIp,
+                    onlineCount = onlineCount, userCount = users.size, chatCount = chats.size,
+                    msgCount = msgCount, logs = logs, users = users, chats = chats,
+                    onStart = vm::startServer, onStop = vm::stopServer, onRestart = vm::restartServer,
+                    onDeleteUser = vm::deleteUser, onSetAdmin = vm::setAdmin,
+                    onBanUser = vm::banUser, onUnbanUser = vm::unbanUser,
+                    onBlockDm = vm::blockDm, onUnblockDm = vm::unblockDm,
                     onSendBotMessage = vm::sendBotMessage,
-                    onDeleteChat = vm::deleteChat,
-                    onClearLogs = vm::clearLogs
+                    onDeleteChat = vm::deleteChat, onClearLogs = vm::clearLogs
                 )
             }
         }
     }
-    
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
     }
 }

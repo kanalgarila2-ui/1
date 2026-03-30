@@ -13,55 +13,104 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.websocket.*
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 class WsClient {
     private val TAG = "WsClient"
+
     private val httpClient = HttpClient(Android) {
-        install(WebSockets)
+        install(WebSockets) {
+            pingInterval = 20_000
+        }
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(Logging) { level = LogLevel.NONE }
     }
+
     private var session: DefaultWebSocketSession? = null
+
+    // Единственный SharedStateFlow для статуса подключения
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
-    private val _incomingMessages = MutableSharedFlow<WsMessage>(extraBufferCapacity = 128)
+
+    private val _incomingMessages = MutableSharedFlow<WsMessage>(extraBufferCapacity = 256)
     val incomingMessages: SharedFlow<WsMessage> = _incomingMessages.asSharedFlow()
 
-    suspend fun connect(serverUrl: String, token: String): Boolean {
-        return try {
-            val wsUrl = serverUrl.replace("http://", "ws://").replace("https://", "wss://")
-            val fullUrl = if (wsUrl.endsWith("/")) "${wsUrl}ws" else "$wsUrl/ws"
-            Log.d(TAG, "Connecting to $fullUrl")
+    /**
+     * Подключается и держит соединение.
+     * Блокирует корутину пока соединение активно.
+     * При разрыве — возвращает управление.
+     */
+    suspend fun connect(serverUrl: String, token: String) {
+        val wsUrl = serverUrl
+            .replace("http://", "ws://")
+            .replace("https://", "wss://")
+        val fullUrl = if (wsUrl.endsWith("/")) "${wsUrl}ws" else "$wsUrl/ws"
+
+        Log.d(TAG, "Connecting to $fullUrl")
+        try {
             httpClient.webSocket(fullUrl) {
                 session = this
                 _connected.value = true
-                Log.d(TAG, "Connected!")
+                Log.d(TAG, "WS connected! Sending auth...")
+
+                // Сразу аутентифицируемся
                 send(Frame.Text(Json.encodeToString(WsMessage(WsTypes.AUTH, token))))
-                for (frame in incoming) {
-                    if (frame !is Frame.Text) continue
-                    try {
-                        val msg = Json { ignoreUnknownKeys = true }.decodeFromString<WsMessage>(frame.readText())
-                        _incomingMessages.emit(msg)
-                    } catch (e: Exception) { Log.e(TAG, "Parse: ${e.message}") }
+
+                // Читаем входящие сообщения (блокирует до закрытия)
+                try {
+                    for (frame in incoming) {
+                        when (frame) {
+                            is Frame.Text -> {
+                                val text = frame.readText()
+                                try {
+                                    val msg = Json { ignoreUnknownKeys = true }
+                                        .decodeFromString<WsMessage>(text)
+                                    Log.d(TAG, "← ${msg.type}")
+                                    _incomingMessages.emit(msg)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Parse error: ${e.message} | raw: ${text.take(100)}")
+                                }
+                            }
+                            is Frame.Close -> {
+                                Log.d(TAG, "WS close frame received")
+                                break
+                            }
+                            else -> {}
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    Log.d(TAG, "WS coroutine cancelled")
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "WS read error: ${e.message}")
                 }
             }
-            true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Connection failed: ${e.message}")
+            Log.e(TAG, "WS connection failed: ${e.message}")
+        } finally {
+            session = null
             _connected.value = false
-            false
+            Log.d(TAG, "WS disconnected")
         }
     }
 
     suspend fun send(message: WsMessage) {
-        try { session?.send(Frame.Text(Json.encodeToString(message))) }
-        catch (e: Exception) { Log.e(TAG, "Send: ${e.message}") }
+        try {
+            session?.send(Frame.Text(Json.encodeToString(message)))
+        } catch (e: Exception) {
+            Log.e(TAG, "Send error: ${e.message}")
+        }
     }
 
-    fun disconnect() { _connected.value = false; session = null }
+    fun disconnect() {
+        _connected.value = false
+        session = null
+    }
 }
 
 class ApiClient(private val baseUrl: String) {
@@ -71,11 +120,17 @@ class ApiClient(private val baseUrl: String) {
     }
 
     suspend fun login(req: AuthRequest): AuthResponse = try {
-        client.post("$baseUrl/auth/login") { contentType(ContentType.Application.Json); setBody(req) }.body()
+        client.post("$baseUrl/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }.body()
     } catch (e: Exception) { AuthResponse(false, error = e.message ?: "Ошибка сети") }
 
     suspend fun register(req: RegisterRequest): AuthResponse = try {
-        client.post("$baseUrl/auth/register") { contentType(ContentType.Application.Json); setBody(req) }.body()
+        client.post("$baseUrl/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(req)
+        }.body()
     } catch (e: Exception) { AuthResponse(false, error = e.message ?: "Ошибка сети") }
 
     suspend fun checkUsername(username: String): Boolean = try {
@@ -100,10 +155,12 @@ class ApiClient(private val baseUrl: String) {
     } catch (_: Exception) { false }
 
     suspend fun getUsers(token: String): List<UserDto> = try {
-        client.get("$baseUrl/users") { header(HttpHeaders.Authorization, "Bearer $token") }.body()
+        client.get("$baseUrl/users") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }.body()
     } catch (_: Exception) { emptyList() }
 
-    suspend fun ping(url: String): Boolean = try {
-        client.get("$url/ping").status.isSuccess()
+    suspend fun ping(): Boolean = try {
+        client.get("$baseUrl/ping").status.isSuccess()
     } catch (_: Exception) { false }
 }
