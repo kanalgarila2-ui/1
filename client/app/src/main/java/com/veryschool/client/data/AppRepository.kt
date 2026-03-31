@@ -11,185 +11,235 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+private val TAG = "AppRepo"
+
 class AppRepository(
     private val db: AppDatabase,
     private val prefs: PrefsManager
 ) {
-    private val TAG = "AppRepo"
-    private var wsClient: WsClient? = null
-    private var apiClient: ApiClient? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    // Единый flow статуса — создаём один раз и держим
+    // Один WsClient на всё время жизни репо
+    private val wsClient = WsClient()
+    private var apiClient: ApiClient? = null
+
+    // Scope для WS соединения — отменяется при logout/переподключении
+    private var wsScope: CoroutineScope? = null
+
+    // Единый стейт подключения
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
-    val chats = db.chatDao().getAllChats()
-    val users = db.userDao().getAllUsers()
+    // Room flows — живут всегда
+    val chats: Flow<List<ChatEntity>> = db.chatDao().getAllChats()
+    val users: Flow<List<UserEntity>> = db.userDao().getAllUsers()
 
     fun getMessages(chatId: String) = db.messageDao().getMessages(chatId)
 
     fun initClient(serverUrl: String) {
+        Log.i(TAG, "initClient: $serverUrl")
         apiClient = ApiClient(serverUrl)
     }
 
     fun getApiClient() = apiClient
 
     /**
-     * Запускает WebSocket соединение с авто-переподключением.
-     * Возвращает Job который можно отменить.
+     * Запускает WS с авто-переподключением.
+     * Возвращает Job — отмени его чтобы остановить.
      */
     fun startWsConnection(serverUrl: String, token: String): Job {
-        // Отключаем старый клиент
-        wsClient?.disconnect()
+        Log.i(TAG, "startWsConnection → $serverUrl  token=${token.take(8)}...")
+
+        // Убиваем старый scope если был
+        wsScope?.cancel()
         _connected.value = false
 
-        val client = WsClient()
-        wsClient = client
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        wsScope = scope
 
-        // Подписываемся на статус подключения нового клиента
-        scope.launch {
-            client.connected.collect { isConnected ->
-                _connected.value = isConnected
-                Log.d(TAG, "Connection status: $isConnected")
-            }
-        }
-
-        // Подписываемся на входящие сообщения
-        scope.launch {
-            client.incomingMessages.collect { msg ->
-                handleIncoming(msg)
-            }
-        }
-
-        // Запускаем соединение с авто-переподключением
         return scope.launch {
+            var attempt = 0
             while (isActive) {
-                Log.d(TAG, "Starting WS connection to $serverUrl")
+                attempt++
+                Log.i(TAG, "WS attempt #$attempt")
                 try {
-                    client.connect(serverUrl, token)
+                    wsClient.connect(
+                        serverUrl = serverUrl,
+                        token = token,
+                        onConnected = {
+                            _connected.value = true
+                            Log.i(TAG, "✓ WS CONNECTED")
+                        },
+                        onDisconnected = {
+                            _connected.value = false
+                            Log.w(TAG, "✗ WS DISCONNECTED")
+                        },
+                        onMessage = { msg ->
+                            handleIncoming(msg)
+                        }
+                    )
                 } catch (e: CancellationException) {
+                    Log.i(TAG, "WS loop cancelled")
                     break
                 } catch (e: Exception) {
-                    Log.e(TAG, "WS connect error: ${e.message}")
+                    Log.e(TAG, "WS loop error: ${e.message}")
                 }
 
                 if (!isActive) break
-
-                // Ждём перед переподключением
-                Log.d(TAG, "WS disconnected, reconnecting in 3s...")
+                Log.i(TAG, "Reconnecting in 3s... (attempt $attempt)")
                 delay(3000)
             }
+            Log.i(TAG, "WS loop ended")
         }
     }
 
     private suspend fun handleIncoming(msg: WsMessage) {
+        Log.i(TAG, "INCOMING type=${msg.type} len=${msg.payload.length}")
         try {
-            Log.d(TAG, "Handling: ${msg.type}")
             when (msg.type) {
+
+                WsTypes.AUTH_OK -> {
+                    Log.i(TAG, "✓ AUTH_OK — server accepted us")
+                }
+
+                WsTypes.AUTH_FAIL -> {
+                    Log.e(TAG, "✗ AUTH_FAIL: ${msg.payload}")
+                }
+
                 WsTypes.USER_LIST -> {
-                    val users = Json.decodeFromString<List<UserDto>>(msg.payload)
-                    Log.d(TAG, "Received ${users.size} users")
-                    db.userDao().upsertUsers(users.map { it.toEntity() })
+                    val list = json.decodeFromString<List<UserDto>>(msg.payload)
+                    Log.i(TAG, "USER_LIST: ${list.size} users → saving to DB")
+                    db.userDao().upsertUsers(list.map { it.toEntity() })
+                    val saved = db.userDao().countAll()
+                    Log.i(TAG, "DB now has $saved users")
                 }
+
                 WsTypes.CHAT_LIST -> {
-                    val chats = Json.decodeFromString<List<ChatDto>>(msg.payload)
-                    Log.d(TAG, "Received ${chats.size} chats")
-                    db.chatDao().upsertChats(chats.map { it.toEntity() })
+                    val list = json.decodeFromString<List<ChatDto>>(msg.payload)
+                    Log.i(TAG, "CHAT_LIST: ${list.size} chats → saving to DB")
+                    db.chatDao().upsertChats(list.map { it.toEntity() })
                 }
-                WsTypes.MESSAGE_HISTORY -> {
-                    val msgs = Json.decodeFromString<List<MessageDto>>(msg.payload)
-                    Log.d(TAG, "Received ${msgs.size} messages history")
-                    if (msgs.isNotEmpty()) db.messageDao().upsertMessages(msgs.map { it.toEntity() })
-                }
+
                 WsTypes.NEW_MESSAGE -> {
-                    val m = Json.decodeFromString<MessageDto>(msg.payload)
+                    val m = json.decodeFromString<MessageDto>(msg.payload)
+                    Log.i(TAG, "NEW_MESSAGE in chat=${m.chatId} from=${m.senderId}")
                     db.messageDao().upsertMessage(m.toEntity())
                     db.chatDao().updateLastMessage(m.chatId, m.text.ifEmpty { "📷 Фото" }, m.timestamp)
                 }
-                WsTypes.REACTION_UPDATE -> {
-                    val m = Json.decodeFromString<MessageDto>(msg.payload)
-                    db.messageDao().updateReactions(m.id, Json.encodeToString(m.reactions))
+
+                WsTypes.MESSAGE_HISTORY -> {
+                    val list = json.decodeFromString<List<MessageDto>>(msg.payload)
+                    Log.i(TAG, "MESSAGE_HISTORY: ${list.size} msgs")
+                    if (list.isNotEmpty()) db.messageDao().upsertMessages(list.map { it.toEntity() })
                 }
+
+                WsTypes.REACTION_UPDATE -> {
+                    val m = json.decodeFromString<MessageDto>(msg.payload)
+                    db.messageDao().updateReactions(m.id, json.encodeToString(m.reactions))
+                }
+
                 WsTypes.USER_ONLINE -> {
-                    val u = Json.decodeFromString<UserDto>(msg.payload)
+                    val u = json.decodeFromString<UserDto>(msg.payload)
+                    Log.i(TAG, "USER_ONLINE: @${u.username}")
                     db.userDao().upsertUser(u.toEntity())
                 }
+
                 WsTypes.USER_OFFLINE -> {
-                    val u = Json.decodeFromString<UserDto>(msg.payload)
+                    val u = json.decodeFromString<UserDto>(msg.payload)
+                    Log.i(TAG, "USER_OFFLINE: @${u.username}")
                     db.userDao().setOnline(u.id, false)
                 }
+
                 WsTypes.PROFILE_UPDATED -> {
-                    val u = Json.decodeFromString<UserDto>(msg.payload)
+                    val u = json.decodeFromString<UserDto>(msg.payload)
                     db.userDao().upsertUser(u.toEntity())
                 }
+
                 WsTypes.GROUP_CREATED -> {
-                    val c = Json.decodeFromString<ChatDto>(msg.payload)
-                    Log.d(TAG, "New chat created: ${c.name}")
+                    val c = json.decodeFromString<ChatDto>(msg.payload)
+                    Log.i(TAG, "GROUP_CREATED: ${c.name} id=${c.id}")
                     db.chatDao().upsertChat(c.toEntity())
                 }
+
                 WsTypes.USER_UPDATED -> {
-                    val u = Json.decodeFromString<UserDto>(msg.payload)
+                    val u = json.decodeFromString<UserDto>(msg.payload)
                     db.userDao().upsertUser(u.toEntity())
                 }
+
                 WsTypes.BANNED -> {
-                    Log.w(TAG, "Banned: ${msg.payload}")
+                    Log.w(TAG, "BANNED: ${msg.payload}")
                 }
+
                 WsTypes.ERROR -> {
-                    Log.e(TAG, "Server error: ${msg.payload}")
+                    Log.e(TAG, "SERVER ERROR: ${msg.payload}")
                 }
-                WsTypes.PING -> sendWs(WsMessage(WsTypes.PONG))
-                WsTypes.AUTH_OK -> {
-                    Log.d(TAG, "Auth OK!")
+
+                WsTypes.PING -> {
+                    Log.d(TAG, "PING → sending PONG")
+                    wsClient.send(WsMessage(WsTypes.PONG))
                 }
-                WsTypes.AUTH_FAIL -> {
-                    Log.e(TAG, "Auth FAILED: ${msg.payload}")
-                }
+
+                else -> Log.w(TAG, "UNKNOWN msg type: ${msg.type}")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Handle error [${msg.type}]: ${e.message}")
+            Log.e(TAG, "handleIncoming CRASH [${msg.type}]: ${e.message}\npayload=${msg.payload.take(200)}")
         }
     }
 
-    suspend fun sendMessage(chatId: String, text: String, imageBase64: String = "") {
-        sendWs(WsMessage(WsTypes.SEND_MESSAGE, Json.encodeToString(SendMessageRequest(chatId, text, imageBase64))))
+    // ── Outgoing ──────────────────────────────────────────────────────────────
+
+    fun sendMessage(chatId: String, text: String, imageBase64: String = "") {
+        Log.i(TAG, "sendMessage → chatId=$chatId text=${text.take(40)}")
+        wsClient.send(WsMessage(WsTypes.SEND_MESSAGE, json.encodeToString(
+            SendMessageRequest(chatId, text, imageBase64)
+        )))
     }
 
-    suspend fun sendReaction(messageId: String, chatId: String, emoji: String) {
-        sendWs(WsMessage(WsTypes.REACTION, Json.encodeToString(ReactionRequest(messageId, chatId, emoji))))
+    fun sendReaction(messageId: String, chatId: String, emoji: String) {
+        wsClient.send(WsMessage(WsTypes.REACTION, json.encodeToString(
+            ReactionRequest(messageId, chatId, emoji)
+        )))
     }
 
-    suspend fun requestMessages(chatId: String) {
-        sendWs(WsMessage(WsTypes.MESSAGE_HISTORY, chatId))
-        db.chatDao().clearUnread(chatId)
+    fun requestMessages(chatId: String) {
+        Log.i(TAG, "requestMessages chatId=$chatId")
+        wsClient.send(WsMessage(WsTypes.MESSAGE_HISTORY, chatId))
+        CoroutineScope(Dispatchers.IO).launch { db.chatDao().clearUnread(chatId) }
     }
 
-    suspend fun createDm(otherUserId: String, currentUserId: String, otherDisplayName: String) {
-        sendWs(WsMessage(WsTypes.CREATE_GROUP, Json.encodeToString(
+    fun createDm(otherUserId: String, currentUserId: String, otherDisplayName: String) {
+        Log.i(TAG, "createDm → otherUserId=$otherUserId name=$otherDisplayName")
+        wsClient.send(WsMessage(WsTypes.CREATE_GROUP, json.encodeToString(
             CreateGroupRequest(name = otherDisplayName, memberIds = listOf(otherUserId), isDm = true)
         )))
     }
 
-    suspend fun createGroup(name: String, memberIds: List<String>) {
-        sendWs(WsMessage(WsTypes.CREATE_GROUP, Json.encodeToString(
+    fun createGroup(name: String, memberIds: List<String>) {
+        Log.i(TAG, "createGroup → name=$name members=$memberIds")
+        wsClient.send(WsMessage(WsTypes.CREATE_GROUP, json.encodeToString(
             CreateGroupRequest(name = name, memberIds = memberIds, isDm = false)
         )))
     }
 
-    suspend fun sendTyping(chatId: String) = sendWs(WsMessage(WsTypes.TYPING, chatId))
-    suspend fun sendTypingStop(chatId: String) = sendWs(WsMessage(WsTypes.TYPING_STOP, chatId))
-
-    private suspend fun sendWs(msg: WsMessage) {
-        wsClient?.send(msg)
-    }
+    fun sendTyping(chatId: String) = wsClient.send(WsMessage(WsTypes.TYPING, chatId))
+    fun sendTypingStop(chatId: String) = wsClient.send(WsMessage(WsTypes.TYPING_STOP, chatId))
 
     fun disconnect() {
-        wsClient?.disconnect()
+        Log.i(TAG, "disconnect()")
+        wsScope?.cancel()
+        wsScope = null
+        wsClient.close()
         _connected.value = false
     }
 
     // ── Converters ────────────────────────────────────────────────────────────
-    private fun ChatDto.toEntity() = ChatEntity(id, name, isGroup, Json.encodeToString(members), avatarBase64, lastMessage, lastMessageTime, 0, isBot)
-    private fun MessageDto.toEntity() = MessageEntity(id, chatId, senderId, senderName, text, timestamp, Json.encodeToString(reactions), imageBase64)
+    private fun ChatDto.toEntity() = ChatEntity(
+        id, name, isGroup, json.encodeToString(members),
+        avatarBase64, lastMessage, lastMessageTime, 0, isBot
+    )
+    private fun MessageDto.toEntity() = MessageEntity(
+        id, chatId, senderId, senderName, text, timestamp,
+        json.encodeToString(reactions), imageBase64
+    )
     private fun UserDto.toEntity() = UserEntity(id, username, displayName, avatarBase64, online)
 }

@@ -10,7 +10,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import com.veryschool.client.data.AppRepository
 import com.veryschool.client.data.db.AppDatabase
+import com.veryschool.client.data.db.ChatEntity
 import com.veryschool.client.data.db.MessageEntity
+import com.veryschool.client.data.db.UserEntity
 import com.veryschool.client.data.models.*
 import com.veryschool.client.data.prefs.PrefsManager
 import kotlinx.coroutines.Job
@@ -34,7 +36,7 @@ class MainViewModel(
     private val prefs: PrefsManager
 ) : ViewModel() {
 
-    private val TAG = "MainViewModel"
+    private val TAG = "ViewModel"
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Unknown)
     val authState: StateFlow<AuthState> = _authState
@@ -59,11 +61,11 @@ class MainViewModel(
 
     private val _token = MutableStateFlow("")
 
-    // StateFlow — гарантированно доставляет данные в UI
-    val chats: StateFlow<List<com.veryschool.client.data.db.ChatEntity>> =
+    // stateIn(Eagerly) — подписка НЕМЕДЛЕННО, не ждёт UI
+    val chats: StateFlow<List<ChatEntity>> =
         repo.chats.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val users: StateFlow<List<com.veryschool.client.data.db.UserEntity>> =
+    val users: StateFlow<List<UserEntity>> =
         repo.users.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val connected: StateFlow<Boolean> = repo.connected
@@ -73,44 +75,56 @@ class MainViewModel(
 
     private var wsJob: Job? = null
 
+    // Логируем изменения users для дебага
     init {
         viewModelScope.launch {
-            // Не используем distinctUntilChanged — нам нужно переподключаться даже
-            // если url/token те же (например после перезапуска приложения)
-            combine(prefs.serverUrl, prefs.authToken) { url, token -> Pair(url, token) }
+            users.collect { list ->
+                Log.i(TAG, "users updated: ${list.size} items")
+            }
+        }
+        viewModelScope.launch {
+            chats.collect { list ->
+                Log.i(TAG, "chats updated: ${list.size} items")
+            }
+        }
+        viewModelScope.launch {
+            connected.collect { c ->
+                Log.i(TAG, "connected=$c")
+            }
+        }
+
+        // Слушаем prefs — запускаемся при любом изменении url/token
+        viewModelScope.launch {
+            combine(prefs.serverUrl, prefs.authToken) { url, token -> url to token }
                 .collect { (url, token) ->
-                    Log.d(TAG, "Prefs changed: url=${url.take(20)} hasToken=${token.isNotEmpty()}")
+                    Log.i(TAG, "prefs: url=${url.take(25)} token=${if (token.isEmpty()) "EMPTY" else "${token.take(8)}..."}")
                     _serverUrl.value = url
 
-                    if (url.isEmpty()) {
-                        _authState.value = AuthState.NeedServer
-                        return@collect
+                    when {
+                        url.isEmpty() -> {
+                            _authState.value = AuthState.NeedServer
+                        }
+                        token.isEmpty() -> {
+                            repo.initClient(url)
+                            _authState.value = AuthState.NeedAuth
+                        }
+                        else -> {
+                            repo.initClient(url)
+                            _token.value = token
+                            _currentUserId.value = prefs.userId.first()
+                            _currentUsername.value = prefs.username.first()
+                            _displayName.value = prefs.displayName.first()
+                            _avatar.value = prefs.avatarBase64.first()
+                            _authState.value = AuthState.Authenticated
+                            Log.i(TAG, "Starting WS for userId=${_currentUserId.value}")
+                            startWs(url, token)
+                        }
                     }
-
-                    repo.initClient(url)
-
-                    if (token.isEmpty()) {
-                        _authState.value = AuthState.NeedAuth
-                        return@collect
-                    }
-
-                    // Загружаем данные пользователя
-                    _token.value = token
-                    _currentUserId.value = prefs.userId.first()
-                    _currentUsername.value = prefs.username.first()
-                    _displayName.value = prefs.displayName.first()
-                    _avatar.value = prefs.avatarBase64.first()
-                    _authState.value = AuthState.Authenticated
-
-                    // Подключаемся к WS
-                    connectWs(url, token)
                 }
         }
     }
 
-    private fun connectWs(url: String, token: String) {
-        Log.d(TAG, "connectWs called: $url")
-        // Отменяем предыдущее соединение
+    private fun startWs(url: String, token: String) {
         wsJob?.cancel()
         wsJob = repo.startWsConnection(url, token)
     }
@@ -118,14 +132,19 @@ class MainViewModel(
     fun saveServer(url: String) {
         viewModelScope.launch {
             val clean = if (url.startsWith("http")) url else "http://$url"
+            Log.i(TAG, "saveServer: $clean")
             prefs.saveServerUrl(clean)
         }
     }
 
     fun login(username: String, password: String, passphrase: String) {
         viewModelScope.launch {
-            val api = repo.getApiClient() ?: run { _uiEvent.emit(UiEvent.Error("Сначала укажите сервер")); return@launch }
+            val api = repo.getApiClient() ?: run {
+                _uiEvent.emit(UiEvent.Error("Нет подключения к серверу")); return@launch
+            }
+            Log.i(TAG, "login: @$username")
             val res = api.login(AuthRequest(username.trim(), password, passphrase))
+            Log.i(TAG, "login result: success=${res.success} error=${res.error}")
             if (res.success && res.user != null) {
                 prefs.saveAuth(res.token, res.user.id, res.user.username, res.user.displayName)
                 _uiEvent.emit(UiEvent.Success("Добро пожаловать, ${res.user.displayName}!"))
@@ -137,7 +156,9 @@ class MainViewModel(
 
     fun register(username: String, password: String, displayName: String, passphrase: String) {
         viewModelScope.launch {
-            val api = repo.getApiClient() ?: run { _uiEvent.emit(UiEvent.Error("Сначала укажите сервер")); return@launch }
+            val api = repo.getApiClient() ?: run {
+                _uiEvent.emit(UiEvent.Error("Нет подключения к серверу")); return@launch
+            }
             val exists = api.checkUsername(username.trim())
             if (exists) { _uiEvent.emit(UiEvent.Error("Имя пользователя уже занято")); return@launch }
             val res = api.register(RegisterRequest(username.trim(), password, displayName.trim(), passphrase))
@@ -160,17 +181,18 @@ class MainViewModel(
     }
 
     fun openChat(chatId: String) {
+        // Запрашиваем историю
+        repo.requestMessages(chatId)
+        // Подписываемся на сообщения
         viewModelScope.launch {
-            repo.requestMessages(chatId)
             repo.getMessages(chatId).collect { msgs ->
+                Log.d(TAG, "messages updated for $chatId: ${msgs.size}")
                 _selectedChatMessages.value = msgs
             }
         }
     }
 
-    fun sendMessage(chatId: String, text: String) {
-        viewModelScope.launch { repo.sendMessage(chatId, text) }
-    }
+    fun sendMessage(chatId: String, text: String) = repo.sendMessage(chatId, text)
 
     fun sendImageMessage(chatId: String, uri: Uri, context: Context) {
         viewModelScope.launch {
@@ -184,21 +206,20 @@ class MainViewModel(
         }
     }
 
-    fun sendReaction(messageId: String, chatId: String, emoji: String) {
-        viewModelScope.launch { repo.sendReaction(messageId, chatId, emoji) }
-    }
+    fun sendReaction(messageId: String, chatId: String, emoji: String) =
+        repo.sendReaction(messageId, chatId, emoji)
 
     fun startDm(otherUserId: String) {
-        viewModelScope.launch {
-            val allUsers = repo.users.first()
-            val otherUser = allUsers.firstOrNull { it.id == otherUserId } ?: return@launch
-            repo.createDm(otherUserId, _currentUserId.value, otherUser.displayName)
+        val otherUser = users.value.firstOrNull { it.id == otherUserId }
+        if (otherUser == null) {
+            Log.e(TAG, "startDm: user $otherUserId not found in ${users.value.size} users")
+            return
         }
+        repo.createDm(otherUserId, _currentUserId.value, otherUser.displayName)
     }
 
-    fun createGroup(name: String, memberIds: List<String>) {
-        viewModelScope.launch { repo.createGroup(name, memberIds) }
-    }
+    fun createGroup(name: String, memberIds: List<String>) =
+        repo.createGroup(name, memberIds)
 
     fun updateProfile(newDisplayName: String, avatarUri: Uri?, context: Context) {
         viewModelScope.launch {
@@ -234,8 +255,8 @@ class MainViewModel(
         }
     }
 
-    fun sendTyping(chatId: String) { viewModelScope.launch { repo.sendTyping(chatId) } }
-    fun sendTypingStop(chatId: String) { viewModelScope.launch { repo.sendTypingStop(chatId) } }
+    fun sendTyping(chatId: String) = repo.sendTyping(chatId)
+    fun sendTypingStop(chatId: String) = repo.sendTypingStop(chatId)
 
     override fun onCleared() {
         super.onCleared()

@@ -67,11 +67,12 @@ interface UserDao {
     @Upsert suspend fun upsertUsers(users: List<UserEntity>)
     @Query("SELECT * FROM users") fun getAllUsers(): Flow<List<UserEntity>>
     @Query("UPDATE users SET online = :online WHERE id = :id") suspend fun setOnline(id: String, online: Boolean)
+    @Query("SELECT COUNT(*) FROM users") suspend fun countAll(): Int
     @Query("UPDATE users SET displayName = :name, avatarBase64 = :avatar WHERE id = :id")
     suspend fun updateProfile(id: String, name: String, avatar: String)
 }
 
-@Database(entities = [ChatEntity::class, MessageEntity::class, UserEntity::class], version = 2, exportSchema = false)
+@Database(entities = [ChatEntity::class, MessageEntity::class, UserEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun messageDao(): MessageDao
