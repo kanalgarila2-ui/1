@@ -13,6 +13,7 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
@@ -22,7 +23,6 @@ private const val TAG = "WsClient"
  * WS клиент.
  * - connect() блокирует корутину пока соединение живо
  * - Channel НЕ закрывается при disconnect — переиспользуется между реконнектами
- * - closeSession() только для logout
  */
 class WsClient {
 
@@ -33,7 +33,7 @@ class WsClient {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
 
-    // ВАЖНО: Channel живёт всё время жизни WsClient — НЕ закрываем его
+    // ВАЖНО: Channel живёт всё время жизни WsClient — НЕ закрываем его никогда
     private val outgoing = Channel<String>(Channel.UNLIMITED)
 
     suspend fun connect(
@@ -56,18 +56,22 @@ class WsClient {
                 Log.i(TAG, "✓ Connected. Sending AUTH token...")
                 send(Frame.Text(Json.encodeToString(WsMessage(WsTypes.AUTH, token))))
 
+                // Отправка исходящих — читаем через tryReceive в цикле
+                // чтобы не конфликтовать с Ktor receiver scope
                 val sendJob = launch {
                     while (isActive) {
-                        try {
-                            val text = withTimeoutOrNull(500) { outgoing.receive() }
-                            if (text != null) {
-                                Log.d(TAG, "→ Sending: ${text.take(80)}")
+                        val result = outgoing.tryReceive()
+                        if (result.isSuccess) {
+                            val text = result.getOrNull() ?: continue
+                            Log.d(TAG, "→ Sending: ${text.take(80)}")
+                            try {
                                 send(Frame.Text(text))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Send error: ${e.message}")
                             }
-                        } catch (e: CancellationException) {
-                            break
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Send error: ${e.message}")
+                        } else {
+                            // Нет сообщений — небольшая пауза чтобы не жечь CPU
+                            delay(10)
                         }
                     }
                 }

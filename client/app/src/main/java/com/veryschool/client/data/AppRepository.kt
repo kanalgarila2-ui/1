@@ -223,8 +223,7 @@ class AppRepository(
         Log.i(TAG, "disconnect()")
         wsScope?.cancel()
         wsScope = null
-        // НЕ закрываем channel — wsClient переиспользуется
-        wsClient.closeSession()
+        // НЕ закрываем channel — wsClient переиспользуется между реконнектами
         _connected.value = false
     }
 
