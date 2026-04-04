@@ -17,17 +17,11 @@ val AdminRed = Color(0xFFFF4757)
 val AdminYellow = Color(0xFFFFA502)
 
 private val AdminColorScheme = darkColorScheme(
-    primary = AdminPrimary,
-    secondary = AdminSecondary,
-    background = AdminBackground,
-    surface = AdminSurface,
-    surfaceVariant = AdminSurfaceVariant,
-    onPrimary = Color.White,
-    onBackground = AdminOnSurface,
-    onSurface = AdminOnSurface,
-    onSurfaceVariant = AdminOnSurfaceMuted,
-    outline = AdminBorder,
-    error = AdminRed
+    primary = AdminPrimary, secondary = AdminSecondary,
+    background = AdminBackground, surface = AdminSurface,
+    surfaceVariant = AdminSurfaceVariant, onPrimary = Color.White,
+    onBackground = AdminOnSurface, onSurface = AdminOnSurface,
+    onSurfaceVariant = AdminOnSurfaceMuted, outline = AdminBorder, error = AdminRed
 )
 
 @Composable

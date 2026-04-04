@@ -41,7 +41,6 @@ import java.util.*
 
 val REACTIONS = listOf("👍", "❤️", "😂")
 
-// Parse vs:///id=XXXXXX links
 private val VS_LINK_REGEX = Regex("vs:///id=(\\d{6})")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,7 +139,6 @@ fun MessageBubble(message: MessageEntity, isOwn: Boolean, users: List<UserEntity
                     if (bytes != null) { AsyncImage(model = bytes, contentDescription = null, modifier = Modifier.widthIn(max = 240.dp).heightIn(max = 240.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Fit); if (message.text.isNotEmpty()) Spacer(Modifier.height(4.dp)) }
                 }
                 if (message.text.isNotEmpty()) {
-                    // Parse vs:/// links
                     val vsMatches = VS_LINK_REGEX.findAll(message.text)
                     if (vsMatches.none()) {
                         Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp)
@@ -152,9 +150,7 @@ fun MessageBubble(message: MessageEntity, isOwn: Boolean, users: List<UserEntity
                                 val user = users.firstOrNull { it.id == userId }
                                 if (match.range.first > lastEnd) withStyle(SpanStyle(color = Color.White, fontSize = 15.sp)) { append(message.text.substring(lastEnd, match.range.first)) }
                                 pushStringAnnotation("USER_LINK", userId)
-                                withStyle(SpanStyle(color = Color(0xFF74B9FF), fontSize = 15.sp, fontWeight = FontWeight.Medium)) {
-                                    append("@${user?.displayName ?: userId}")
-                                }
+                                withStyle(SpanStyle(color = Color(0xFF74B9FF), fontSize = 15.sp, fontWeight = FontWeight.Medium)) { append("@${user?.displayName ?: userId}") }
                                 pop()
                                 lastEnd = match.range.last + 1
                             }

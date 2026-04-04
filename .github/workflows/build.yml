@@ -52,7 +52,7 @@ jobs:
           python3 make_icons.py client 108 92 231
           cd client
           ./gradlew assembleDebug --stacktrace
-
+    
       - name: Upload Client APK
         uses: actions/upload-artifact@v4
         with:
@@ -104,7 +104,7 @@ jobs:
           python3 make_icons.py server 0 184 148
           cd server
           ./gradlew assembleDebug --stacktrace
-
+    
       - name: Upload Server APK
         uses: actions/upload-artifact@v4
         with:

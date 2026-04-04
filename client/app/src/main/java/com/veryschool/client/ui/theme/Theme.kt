@@ -4,7 +4,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// VerySchool Color Palette
 val VSPrimary = Color(0xFF6C5CE7)
 val VSPrimaryVariant = Color(0xFF5A4BD1)
 val VSSecondary = Color(0xFF00CEC9)
@@ -37,9 +36,5 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun VerySchoolTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = DarkColorScheme,
-        typography = Typography(),
-        content = content
-    )
+    MaterialTheme(colorScheme = DarkColorScheme, typography = Typography(), content = content)
 }

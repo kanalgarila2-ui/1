@@ -3,14 +3,12 @@ package com.veryschool.client.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,7 +39,6 @@ fun AuthScreen(
             Text("VerySchool", fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = VSPrimary)
             Spacer(Modifier.height(8.dp))
 
-            // Tab switch
             Row(
                 modifier = Modifier
                     .background(VSSurface, RoundedCornerShape(16.dp))
@@ -86,7 +83,8 @@ fun AuthScreen(
                     }
 
                     OutlinedTextField(
-                        value = username, onValueChange = { username = it.lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }; error = "" },
+                        value = username,
+                        onValueChange = { username = it.lowercase().filter { c -> c.isLetterOrDigit() || c == '_' }; error = "" },
                         label = { Text("Имя пользователя", color = VSOnSurfaceMuted) },
                         placeholder = { Text("только буквы, цифры, _", color = VSOnSurfaceMuted) },
                         modifier = Modifier.fillMaxWidth(), colors = fieldColors, singleLine = true, shape = fieldShape

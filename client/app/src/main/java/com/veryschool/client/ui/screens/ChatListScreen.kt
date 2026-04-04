@@ -95,13 +95,11 @@ fun ChatListScreen(
             }
         }
     ) { padding ->
-        // Show user search results when searching
         val matchingUsers = if (searchQuery.isNotBlank())
             users.filter { it.id != currentUserId && (it.username.contains(searchQuery, ignoreCase = true) || it.displayName.contains(searchQuery, ignoreCase = true) || it.id.contains(searchQuery)) }
         else emptyList()
 
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(vertical = 8.dp)) {
-            // User search results
             if (matchingUsers.isNotEmpty()) {
                 item {
                     Text("Пользователи", color = VSOnSurfaceMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium,
@@ -136,7 +134,7 @@ fun ChatListScreen(
                             Spacer(Modifier.height(12.dp))
                             Text("Нет чатов", color = VSOnSurfaceMuted)
                             Spacer(Modifier.height(4.dp))
-                            Text("Нажми ✏️ чтобы написать кому-нибудь", color = VSOnSurfaceMuted, fontSize = 13.sp)
+                            Text("Нажми ✏\uFE0F чтобы написать кому-нибудь", color = VSOnSurfaceMuted, fontSize = 13.sp)
                             if (users.filter { it.id != currentUserId }.isEmpty()) {
                                 Spacer(Modifier.height(8.dp))
                                 Text("(Пока нет других пользователей)", color = VSOnSurfaceMuted, fontSize = 12.sp)
@@ -152,7 +150,6 @@ fun ChatListScreen(
         }
     }
 
-    // New DM dialog - show ALL users
     if (showNewChat) {
         val others = users.filter { it.id != currentUserId }
         var dmSearch by remember { mutableStateOf("") }

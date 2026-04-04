@@ -35,22 +35,17 @@ fun UserProfileScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(24.dp))
-
-            // Avatar + online indicator
             Box {
                 AvatarImage(avatarBase64, displayName, 100)
                 if (online) Box(Modifier.size(18.dp).background(VSGreen, CircleShape).align(Alignment.BottomEnd))
             }
             Spacer(Modifier.height(16.dp))
-
             Text(displayName, color = VSOnSurface, fontWeight = FontWeight.Bold, fontSize = 22.sp)
             Text("@$username", color = VSOnSurfaceMuted, fontSize = 14.sp)
             Spacer(Modifier.height(4.dp))
             Text(if (online) "🟢 онлайн" else "⚫ оффлайн", color = if (online) VSGreen else VSOnSurfaceMuted, fontSize = 13.sp)
-
             Spacer(Modifier.height(24.dp))
 
-            // ID card
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = VSSurface)) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Tag, null, tint = VSSecondary, modifier = Modifier.size(20.dp))
@@ -61,10 +56,8 @@ fun UserProfileScreen(
                     }
                 }
             }
-
             Spacer(Modifier.height(12.dp))
 
-            // Tip: how to mention
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = VSSurface)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -80,7 +73,6 @@ fun UserProfileScreen(
             }
 
             Spacer(Modifier.weight(1f))
-
             Button(
                 onClick = onSendMessage,
                 modifier = Modifier.fillMaxWidth().height(52.dp),

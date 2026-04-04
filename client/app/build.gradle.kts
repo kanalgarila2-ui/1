@@ -40,8 +40,9 @@ android {
         compose = true
     }
     
+    // ВАЖНО: 1.5.3 совместимо с Kotlin 1.9.24 (1.5.14 — нет!)
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
+        kotlinCompilerExtensionVersion = "1.5.3"
     }
     
     packaging {

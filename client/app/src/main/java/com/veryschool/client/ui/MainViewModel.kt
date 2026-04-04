@@ -61,7 +61,6 @@ class MainViewModel(
 
     private val _token = MutableStateFlow("")
 
-    // stateIn(Eagerly) — подписка НЕМЕДЛЕННО, не ждёт UI
     val chats: StateFlow<List<ChatEntity>> =
         repo.chats.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -75,25 +74,20 @@ class MainViewModel(
 
     private var wsJob: Job? = null
 
-    // Логируем изменения users для дебага
+    // Храним job подписки на сообщения чтобы отменять предыдущую
+    private var chatMessagesJob: Job? = null
+
     init {
         viewModelScope.launch {
-            users.collect { list ->
-                Log.i(TAG, "users updated: ${list.size} items")
-            }
+            users.collect { list -> Log.i(TAG, "users updated: ${list.size} items") }
         }
         viewModelScope.launch {
-            chats.collect { list ->
-                Log.i(TAG, "chats updated: ${list.size} items")
-            }
+            chats.collect { list -> Log.i(TAG, "chats updated: ${list.size} items") }
         }
         viewModelScope.launch {
-            connected.collect { c ->
-                Log.i(TAG, "connected=$c")
-            }
+            connected.collect { c -> Log.i(TAG, "connected=$c") }
         }
 
-        // Слушаем prefs — запускаемся при любом изменении url/token
         viewModelScope.launch {
             combine(prefs.serverUrl, prefs.authToken) { url, token -> url to token }
                 .collect { (url, token) ->
@@ -175,6 +169,8 @@ class MainViewModel(
         viewModelScope.launch {
             wsJob?.cancel()
             wsJob = null
+            chatMessagesJob?.cancel()
+            chatMessagesJob = null
             repo.disconnect()
             prefs.clearAuth()
         }
@@ -183,8 +179,9 @@ class MainViewModel(
     fun openChat(chatId: String) {
         // Запрашиваем историю
         repo.requestMessages(chatId)
-        // Подписываемся на сообщения
-        viewModelScope.launch {
+        // Отменяем предыдущую подписку и создаём новую
+        chatMessagesJob?.cancel()
+        chatMessagesJob = viewModelScope.launch {
             repo.getMessages(chatId).collect { msgs ->
                 Log.d(TAG, "messages updated for $chatId: ${msgs.size}")
                 _selectedChatMessages.value = msgs
@@ -261,6 +258,7 @@ class MainViewModel(
     override fun onCleared() {
         super.onCleared()
         wsJob?.cancel()
+        chatMessagesJob?.cancel()
         repo.disconnect()
     }
 }

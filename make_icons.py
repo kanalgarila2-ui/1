@@ -20,11 +20,8 @@ project = sys.argv[1]
 r, g, b = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 
 sizes = {
-    'mdpi': 48,
-    'hdpi': 72,
-    'xhdpi': 96,
-    'xxhdpi': 144,
-    'xxxhdpi': 192,
+    'mdpi': 48, 'hdpi': 72, 'xhdpi': 96,
+    'xxhdpi': 144, 'xxxhdpi': 192,
 }
 
 for density, px in sizes.items():

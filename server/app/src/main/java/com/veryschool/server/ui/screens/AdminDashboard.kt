@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.veryschool.server.ui.screens
 
 import androidx.compose.foundation.background
@@ -24,7 +26,6 @@ import com.veryschool.server.data.ChatEntity
 import com.veryschool.server.data.UserEntity
 import com.veryschool.server.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboard(
     serverRunning: Boolean, localIp: String, publicIp: String, onlineCount: Int,
@@ -157,7 +158,6 @@ fun UsersTab(users: List<UserEntity>, onDelete: (String) -> Unit, onSetAdmin: (S
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     var showBanDialog by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
-
     val filtered = users.filter { searchQuery.isBlank() || it.username.contains(searchQuery, ignoreCase = true) || it.displayName.contains(searchQuery, ignoreCase = true) || it.id.contains(searchQuery) }
 
     Column(Modifier.fillMaxSize()) {
@@ -190,15 +190,11 @@ fun UsersTab(users: List<UserEntity>, onDelete: (String) -> Unit, onSetAdmin: (S
                         }
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Admin toggle
                             SmallActionBtn(if (user.isAdmin) "−Admin" else "+Admin", AdminYellow) { onSetAdmin(user.id, !user.isAdmin) }
-                            // Ban/unban
                             if (user.isBanned) SmallActionBtn("Разбан", AdminGreen) { onUnban(user.id) }
                             else SmallActionBtn("Бан", AdminRed) { showBanDialog = user.id }
-                            // DM block/unblock
                             if (user.dmBlocked) SmallActionBtn("DM ✓", AdminGreen) { onUnblockDm(user.id) }
                             else SmallActionBtn("DM ⛔", AdminYellow) { onBlockDm(user.id, 0L) }
-                            // Delete
                             SmallActionBtn("Удалить", AdminRed.copy(0.7f)) { confirmDelete = user.id }
                         }
                     }
@@ -215,12 +211,8 @@ fun UsersTab(users: List<UserEntity>, onDelete: (String) -> Unit, onSetAdmin: (S
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Отмена", color = AdminOnSurfaceMuted) } },
             containerColor = AdminSurface)
     }
-
     if (showBanDialog != null) {
-        BanDialog(
-            onBan = { mins, reason -> onBan(showBanDialog!!, mins, reason); showBanDialog = null },
-            onDismiss = { showBanDialog = null }
-        )
+        BanDialog(onBan = { mins, reason -> onBan(showBanDialog!!, mins, reason); showBanDialog = null }, onDismiss = { showBanDialog = null })
     }
 }
 
@@ -265,13 +257,11 @@ fun BotTab(users: List<UserEntity>, onSendBot: (String, String) -> Unit) {
                     Text("VerySchool BOT", color = AdminOnSurface, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
                 Text("Отправить сообщение от имени бота", color = AdminOnSurfaceMuted, fontSize = 12.sp)
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = targetAll, onCheckedChange = { targetAll = it }, colors = SwitchDefaults.colors(checkedThumbColor = AdminPrimary, checkedTrackColor = AdminPrimary.copy(0.3f)))
                     Spacer(Modifier.width(8.dp))
                     Text(if (targetAll) "Всем пользователям" else "Конкретному пользователю", color = AdminOnSurface)
                 }
-
                 if (!targetAll) {
                     var expanded by remember { mutableStateOf(false) }
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
@@ -287,17 +277,10 @@ fun BotTab(users: List<UserEntity>, onSendBot: (String, String) -> Unit) {
                         }
                     }
                 }
-
                 OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("Сообщение") }, colors = fieldColors, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 4)
-
-                Button(onClick = {
-                    if (text.isNotBlank()) {
-                        onSendBot(text.trim(), if (targetAll) "" else selectedUser)
-                        text = ""
-                    }
-                }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = AdminPrimary)) {
-                    Icon(Icons.Default.Send, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                    Text("Отправить от BOT")
+                Button(onClick = { if (text.isNotBlank()) { onSendBot(text.trim(), if (targetAll) "" else selectedUser); text = "" } },
+                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = AdminPrimary)) {
+                    Icon(Icons.Default.Send, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Отправить от BOT")
                 }
             }
         }

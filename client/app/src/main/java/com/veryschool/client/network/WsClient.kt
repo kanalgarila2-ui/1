@@ -13,27 +13,28 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
-private val TAG = "WsClient"
+private const val TAG = "WsClient"
 
 /**
- * Простой WS клиент. connect() блокирует корутину пока соединение живо.
- * Все flows живут снаружи — в AppRepository.
+ * WS клиент.
+ * - connect() блокирует корутину пока соединение живо
+ * - Channel НЕ закрывается при disconnect — переиспользуется между реконнектами
+ * - closeSession() только для logout
  */
 class WsClient {
 
     private val httpClient = HttpClient(Android) {
-        install(WebSockets)
+        install(WebSockets) {
+            pingInterval = 20_000L
+        }
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
 
-    // Очередь исходящих сообщений
+    // ВАЖНО: Channel живёт всё время жизни WsClient — НЕ закрываем его
     private val outgoing = Channel<String>(Channel.UNLIMITED)
-
-    private var _session: DefaultWebSocketSession? = null
 
     suspend fun connect(
         serverUrl: String,
@@ -51,24 +52,26 @@ class WsClient {
 
         try {
             httpClient.webSocket(fullUrl) {
-                _session = this
                 onConnected()
                 Log.i(TAG, "✓ Connected. Sending AUTH token...")
                 send(Frame.Text(Json.encodeToString(WsMessage(WsTypes.AUTH, token))))
 
-                // Запускаем отправку исходящих сообщений
                 val sendJob = launch {
-                    for (text in outgoing) {
+                    while (isActive) {
                         try {
-                            Log.d(TAG, "→ Sending: ${text.take(80)}")
-                            send(Frame.Text(text))
+                            val text = withTimeoutOrNull(500) { outgoing.receive() }
+                            if (text != null) {
+                                Log.d(TAG, "→ Sending: ${text.take(80)}")
+                                send(Frame.Text(text))
+                            }
+                        } catch (e: CancellationException) {
+                            break
                         } catch (e: Exception) {
                             Log.e(TAG, "Send error: ${e.message}")
                         }
                     }
                 }
 
-                // Читаем входящие
                 try {
                     for (frame in incoming) {
                         when (frame) {
@@ -81,14 +84,12 @@ class WsClient {
                                     Log.i(TAG, "← MSG type=${msg.type} payloadLen=${msg.payload.length}")
                                     onMessage(msg)
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Parse error: ${e.message} | raw=$raw")
+                                    Log.e(TAG, "Parse error: ${e.message} | raw=${raw.take(200)}")
                                 }
                             }
-                            is Frame.Close -> {
-                                Log.w(TAG, "← Close frame: ${(frame as? Frame.Close)?.readReason()}")
-                            }
+                            is Frame.Close -> Log.w(TAG, "← Close frame")
                             is Frame.Ping -> {
-                                Log.d(TAG, "← Ping, sending Pong")
+                                Log.d(TAG, "← Ping → Pong")
                                 send(Frame.Pong(frame.data))
                             }
                             else -> {}
@@ -99,12 +100,11 @@ class WsClient {
                 }
             }
         } catch (e: CancellationException) {
-            Log.i(TAG, "WS coroutine cancelled")
+            Log.i(TAG, "WS cancelled")
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "WS error: ${e::class.simpleName}: ${e.message}")
         } finally {
-            _session = null
             onDisconnected()
             Log.i(TAG, "✗ Disconnected")
         }
@@ -117,11 +117,6 @@ class WsClient {
             Log.e(TAG, "Send queue full! Dropped: ${message.type}")
         }
     }
-
-    fun close() {
-        outgoing.close()
-        _session = null
-    }
 }
 
 class ApiClient(private val baseUrl: String) {
@@ -132,13 +127,15 @@ class ApiClient(private val baseUrl: String) {
 
     suspend fun login(req: AuthRequest): AuthResponse = try {
         client.post("$baseUrl/auth/login") {
-            contentType(ContentType.Application.Json); setBody(req)
+            contentType(ContentType.Application.Json)
+            setBody(req)
         }.body()
     } catch (e: Exception) { AuthResponse(false, error = "Ошибка сети: ${e.message}") }
 
     suspend fun register(req: RegisterRequest): AuthResponse = try {
         client.post("$baseUrl/auth/register") {
-            contentType(ContentType.Application.Json); setBody(req)
+            contentType(ContentType.Application.Json)
+            setBody(req)
         }.body()
     } catch (e: Exception) { AuthResponse(false, error = "Ошибка сети: ${e.message}") }
 
@@ -149,14 +146,16 @@ class ApiClient(private val baseUrl: String) {
     suspend fun updateProfile(token: String, req: UpdateProfileRequest): Boolean = try {
         client.put("$baseUrl/user/profile") {
             header(HttpHeaders.Authorization, "Bearer $token")
-            contentType(ContentType.Application.Json); setBody(req)
+            contentType(ContentType.Application.Json)
+            setBody(req)
         }.status.value == 200
     } catch (_: Exception) { false }
 
     suspend fun changePassword(token: String, req: ChangePasswordRequest): Boolean = try {
         val res: Map<String, Boolean> = client.post("$baseUrl/user/password") {
             header(HttpHeaders.Authorization, "Bearer $token")
-            contentType(ContentType.Application.Json); setBody(req)
+            contentType(ContentType.Application.Json)
+            setBody(req)
         }.body()
         res["success"] == true
     } catch (_: Exception) { false }

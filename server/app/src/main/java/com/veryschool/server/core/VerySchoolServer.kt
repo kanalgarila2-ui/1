@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalStdlibApi::class)
 package com.veryschool.server.core
 
 import android.util.Log
@@ -26,7 +27,6 @@ import java.time.Duration
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
-// ─── Protocol models ────────────────────────────────────────────────────────
 @Serializable data class WsMessage(val type: String, val payload: String = "")
 @Serializable data class UserDto(val id: String, val username: String, val displayName: String, val avatarBase64: String = "", val online: Boolean = false, val isBanned: Boolean = false, val dmBlocked: Boolean = false)
 @Serializable data class MessageDto(val id: String, val chatId: String, val senderId: String, val senderName: String, val text: String, val timestamp: Long, val reactions: Map<String, List<String>> = emptyMap(), val imageBase64: String = "")
@@ -41,8 +41,8 @@ import java.util.concurrent.ConcurrentHashMap
 @Serializable data class ChangePasswordRequest(val oldPassword: String, val newPassword: String)
 @Serializable data class CheckUsernameResponse(val exists: Boolean)
 @Serializable data class ServerStatsDto(val users: Int, val chats: Int, val messages: Int, val online: Int)
-@Serializable data class BanRequest(val userId: String, val durationMinutes: Long = 0, val reason: String = "") // 0 = permanent
-@Serializable data class BotMessageRequest(val text: String, val targetUserId: String = "") // empty = all users
+@Serializable data class BanRequest(val userId: String, val durationMinutes: Long = 0, val reason: String = "")
+@Serializable data class BotMessageRequest(val text: String, val targetUserId: String = "")
 
 object WsTypes {
     const val AUTH = "auth"; const val AUTH_OK = "auth_ok"; const val AUTH_FAIL = "auth_fail"
@@ -58,7 +58,6 @@ object WsTypes {
     const val BANNED = "banned"; const val USER_UPDATED = "user_updated"
 }
 
-// ─── Connection manager ──────────────────────────────────────────────────────
 data class ActiveSession(val userId: String, val session: DefaultWebSocketSession)
 
 class ConnectionManager {
@@ -81,7 +80,6 @@ class ConnectionManager {
     suspend fun sendToMembers(members: List<String>, msg: WsMessage) { members.forEach { sendTo(it, msg) } }
 }
 
-// ─── Main server ─────────────────────────────────────────────────────────────
 class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8080) {
     private val TAG = "VSServer"
     private var engine: NettyApplicationEngine? = null
@@ -100,9 +98,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
         runBlocking { logMutex.withLock { logs.add(entry); if (logs.size > 2000) logs.removeAt(0) } }
     }
 
-    fun setLogDir(dir: File) {
-        ipLogFile = File(dir, "ip_access.log")
-    }
+    fun setLogDir(dir: File) { ipLogFile = File(dir, "ip_access.log") }
 
     private fun logIp(ip: String, userId: String, action: String) {
         val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
@@ -142,9 +138,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
     fun stop() { engine?.stop(500, 1000); isRunning = false; log("🛑 Server stopped") }
     fun restart() { log("🔄 Restarting..."); stop(); Thread.sleep(500); start() }
 
-    // ─── REST ────────────────────────────────────────────────────────────────
     private fun Routing.setupRestRoutes() {
-
         get("/ping") { call.respond(mapOf("status" to "ok")) }
 
         get("/stats") {
@@ -152,9 +146,8 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(ServerStatsDto(db.userDao().count(), db.chatDao().count(), db.messageDao().count(), connections.count()))
         }
 
-        // ── Register
         post("/auth/register") {
-            val ip = call.request.origin.remoteHost
+            val ip = call.request.local.remoteAddress ?: "unknown"
             val req = call.receive<RegisterRequest>()
             log("🔌 Register attempt from $ip: @${req.username}")
             if (req.passphrase != "22sch") { call.respond(AuthResponse(false, error = "Неверная ключевая фраза")); return@post }
@@ -167,7 +160,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             db.userDao().upsert(user)
             val token = generateToken()
             db.tokenDao().insert(TokenEntity(token, userId))
-            // Create bot chat for new user
             createBotChat(userId)
             logIp(ip, userId, "REGISTER")
             log("👤 Registered: @${req.username} ID=$userId from $ip")
@@ -176,9 +168,8 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(AuthResponse(true, token, dto))
         }
 
-        // ── Login
         post("/auth/login") {
-            val ip = call.request.origin.remoteHost
+            val ip = call.request.local.remoteAddress ?: "unknown"
             val req = call.receive<AuthRequest>()
             log("🔐 Login attempt from $ip: @${req.username}")
             if (req.passphrase != "22sch") { call.respond(AuthResponse(false, error = "Неверная ключевая фраза")); return@post }
@@ -188,7 +179,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                 log("❌ Failed login: @${req.username} from $ip", "WARN")
                 call.respond(AuthResponse(false, error = "Неверный логин или пароль")); return@post
             }
-            // Check ban
             if (user.isBanned && (user.banUntil == 0L || user.banUntil > System.currentTimeMillis())) {
                 val msg = if (user.banUntil == 0L) "Вы заблокированы навсегда. Причина: ${user.banReason}"
                           else "Вы заблокированы до ${java.text.SimpleDateFormat("dd.MM HH:mm").format(Date(user.banUntil))}. Причина: ${user.banReason}"
@@ -212,7 +202,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(HttpStatusCode.OK)
         }
 
-        // ── Users list (ALL users for discovery)
         get("/users") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val users = db.userDao().getAll().map { it.toDto(connections.isOnline(it.id)) }
@@ -220,7 +209,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(users)
         }
 
-        // ── Search users
         get("/users/search") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val q = call.request.queryParameters["q"]?.lowercase() ?: ""
@@ -230,7 +218,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(users)
         }
 
-        // ── Get user by ID
         get("/user/{id}") {
             call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val targetId = call.parameters["id"] ?: run { call.respond(HttpStatusCode.BadRequest); return@get }
@@ -238,7 +225,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(user.toDto(connections.isOnline(user.id)))
         }
 
-        // ── Update profile
         put("/user/profile") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@put }
             val req = call.receive<UpdateProfileRequest>()
@@ -272,7 +258,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(db.messageDao().getForChat(chatId).map { it.toDto() })
         }
 
-        // ── IP logs
         get("/admin/iplogs") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@get }
             val user = db.userDao().getById(userId)
@@ -281,7 +266,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(logs.map { mapOf("ip" to it.ip, "userId" to it.userId, "action" to it.action, "time" to it.timestamp) })
         }
 
-        // ── Admin: ban user
         post("/admin/ban") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
@@ -292,12 +276,10 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             val target = db.userDao().getById(req.userId)
             val durStr = if (until == 0L) "навсегда" else "${req.durationMinutes} мин"
             log("🚫 @${target?.username} BANNED by admin for $durStr. Reason: ${req.reason}", "WARN")
-            // Kick from WS
             connections.sendTo(req.userId, WsMessage(WsTypes.BANNED, "Вы заблокированы. Причина: ${req.reason}"))
             call.respond(mapOf("success" to true))
         }
 
-        // ── Admin: unban
         post("/admin/unban") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
@@ -309,7 +291,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(mapOf("success" to true))
         }
 
-        // ── Admin: block DMs
         post("/admin/block-dm") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
@@ -333,14 +314,12 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
             call.respond(mapOf("success" to true))
         }
 
-        // ── Admin: send bot message
         post("/admin/bot-message") {
             val userId = call.authedUserId() ?: run { call.respond(HttpStatusCode.Unauthorized); return@post }
             val admin = db.userDao().getById(userId)
             if (admin?.isAdmin != true) { call.respond(HttpStatusCode.Forbidden); return@post }
             val req = call.receive<BotMessageRequest>()
             if (req.targetUserId.isEmpty()) {
-                // Send to ALL users
                 val allUsers = db.userDao().getAll()
                 allUsers.forEach { sendBotMessage(it.id, req.text) }
                 log("🤖 Bot broadcast to ${allUsers.size} users: ${req.text.take(50)}")
@@ -364,12 +343,11 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
         }
     }
 
-    // ─── WebSocket ────────────────────────────────────────────────────────────
     private fun Routing.setupWsRoute() {
         webSocket("/ws") {
             var authedUserId: String? = null
             var authedUser: UserEntity? = null
-            val ip = call.request.origin.remoteHost
+            val ip = call.request.local.remoteAddress ?: "unknown"
             log("🔌 New WS connection from $ip")
 
             try {
@@ -387,7 +365,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                             }
                             val user = db.userDao().getById(tokenEntity.userId)
                             if (user == null) { close(); return@webSocket }
-                            // Check ban
                             if (user.isBanned && (user.banUntil == 0L || user.banUntil > System.currentTimeMillis())) {
                                 send(Frame.Text(json.encodeToString(WsMessage(WsTypes.BANNED, "Вы заблокированы: ${user.banReason}"))))
                                 close(); return@webSocket
@@ -400,12 +377,12 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
 
                             send(Frame.Text(json.encodeToString(WsMessage(WsTypes.AUTH_OK, json.encodeToString(user.toDto(true))))))
 
-                            // Send ALL users (critical for user discovery)
+                            // Отправляем ВСЕХ пользователей (критично для отображения списка)
                             val allUsers = db.userDao().getAll().map { it.toDto(connections.isOnline(it.id)) }
                             log("📋 Sending ${allUsers.size} users to @${user.username}")
                             send(Frame.Text(json.encodeToString(WsMessage(WsTypes.USER_LIST, json.encodeToString(allUsers)))))
 
-                            // Send chats
+                            // Отправляем чаты
                             val chats = db.chatDao().getForUser(user.id).map { it.toDto() }
                             log("💬 Sending ${chats.size} chats to @${user.username}")
                             send(Frame.Text(json.encodeToString(WsMessage(WsTypes.CHAT_LIST, json.encodeToString(chats)))))
@@ -417,11 +394,11 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                             val uid = authedUserId ?: continue
                             val user = authedUser ?: continue
                             val req = try { json.decodeFromString<SendMessageRequest>(msg.payload) } catch (_: Exception) { continue }
-                            val chat = db.chatDao().getById(req.chatId) ?: run { sendError("Чат не найден"); continue }
+                            val chat = db.chatDao().getById(req.chatId)
+                            if (chat == null) { sendError("Чат не найден"); continue }
                             val members = try { json.decodeFromString<List<String>>(chat.members) } catch (_: Exception) { emptyList() }
                             if (uid !in members) { sendError("Нет доступа"); continue }
                             if (req.text.isBlank() && req.imageBase64.isBlank()) continue
-
                             val msgEntity = MessageEntity(
                                 id = UUID.randomUUID().toString(), chatId = req.chatId,
                                 senderId = uid, senderName = user.displayName,
@@ -463,9 +440,8 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                             val user = authedUser ?: continue
                             val req = try { json.decodeFromString<CreateGroupRequest>(msg.payload) } catch (_: Exception) { continue }
                             val allMembers = (req.memberIds + uid).distinct()
-                            log("📁 CREATE_GROUP request by @${user.username}: name='${req.name}' members=$allMembers isDm=${req.isDm}")
+                            log("📁 CREATE_GROUP by @${user.username}: name='${req.name}' members=$allMembers isDm=${req.isDm}")
 
-                            // DM: check DM block
                             if (req.isDm && allMembers.size == 2) {
                                 val otherId = allMembers.firstOrNull { it != uid }
                                 if (otherId != null) {
@@ -475,7 +451,6 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                                         sendError("Этому пользователю нельзя писать в личку"); continue
                                     }
                                 }
-                                // Check if DM already exists
                                 val existing = db.chatDao().getAll().firstOrNull { c ->
                                     if (c.isGroup) return@firstOrNull false
                                     val m = try { json.decodeFromString<List<String>>(c.members) } catch (_: Exception) { return@firstOrNull false }
@@ -496,7 +471,7 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
                             val chatId = UUID.randomUUID().toString()
                             val chatEntity = ChatEntity(id = chatId, name = req.name, isGroup = !req.isDm, members = json.encodeToString(allMembers), createdBy = uid)
                             db.chatDao().upsert(chatEntity)
-                            log("✅ Chat created: '${req.name}' id=$chatId by @${user.username} members=$allMembers")
+                            log("✅ Chat created: '${req.name}' id=$chatId members=$allMembers")
 
                             allMembers.forEach { memberId ->
                                 val chatDto = if (req.isDm) {
@@ -542,12 +517,9 @@ class VerySchoolServer(private val db: ServerDatabase, private val port: Int = 8
         }
     }
 
-    // ─── Bot ──────────────────────────────────────────────────────────────────
     suspend fun sendBotMessage(targetUserId: String, text: String) {
         var botChat = db.chatDao().getBotChat(targetUserId)
-        if (botChat == null) {
-            botChat = createBotChat(targetUserId)
-        }
+        if (botChat == null) { botChat = createBotChat(targetUserId) }
         val msgEntity = MessageEntity(
             id = UUID.randomUUID().toString(), chatId = botChat.id,
             senderId = "BOT", senderName = "VerySchool BOT", text = text

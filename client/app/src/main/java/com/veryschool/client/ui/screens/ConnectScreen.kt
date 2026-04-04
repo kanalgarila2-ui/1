@@ -8,7 +8,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -55,14 +54,10 @@ fun ConnectScreen(onConnect: (String, String) -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = VSPrimary,
-                            unfocusedBorderColor = VSBorder,
-                            focusedTextColor = VSOnSurface,
-                            unfocusedTextColor = VSOnSurface,
-                            cursorColor = VSPrimary
+                            focusedBorderColor = VSPrimary, unfocusedBorderColor = VSBorder,
+                            focusedTextColor = VSOnSurface, unfocusedTextColor = VSOnSurface, cursorColor = VSPrimary
                         ),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
+                        singleLine = true, shape = RoundedCornerShape(12.dp)
                     )
                     Spacer(Modifier.height(12.dp))
 
@@ -73,14 +68,10 @@ fun ConnectScreen(onConnect: (String, String) -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         visualTransformation = PasswordVisualTransformation(),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = VSPrimary,
-                            unfocusedBorderColor = VSBorder,
-                            focusedTextColor = VSOnSurface,
-                            unfocusedTextColor = VSOnSurface,
-                            cursorColor = VSPrimary
+                            focusedBorderColor = VSPrimary, unfocusedBorderColor = VSBorder,
+                            focusedTextColor = VSOnSurface, unfocusedTextColor = VSOnSurface, cursorColor = VSPrimary
                         ),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
+                        singleLine = true, shape = RoundedCornerShape(12.dp)
                     )
 
                     if (error.isNotEmpty()) {

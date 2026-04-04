@@ -12,12 +12,11 @@ data class UserEntity(
     val avatarBase64: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val isAdmin: Boolean = false,
-    // Moderation
     val isBanned: Boolean = false,
-    val banUntil: Long = 0L,          // 0 = permanent
+    val banUntil: Long = 0L,
     val banReason: String = "",
-    val dmBlocked: Boolean = false,   // block new DMs
-    val dmBlockUntil: Long = 0L       // 0 = permanent
+    val dmBlocked: Boolean = false,
+    val dmBlockUntil: Long = 0L
 )
 
 @Entity(tableName = "chats")
@@ -29,7 +28,7 @@ data class ChatEntity(
     val avatarBase64: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
-    val isBot: Boolean = false        // VerySchool BOT chat
+    val isBot: Boolean = false
 )
 
 @Entity(tableName = "messages")

@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import com.veryschool.server.core.ServerService
+import com.veryschool.server.core.WsMessage
+import com.veryschool.server.core.WsTypes
 import com.veryschool.server.data.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -70,7 +72,7 @@ class AdminViewModel(private val context: Context) : ViewModel() {
             val svc = ServerService.instance
             svc?.server?.let { srv ->
                 srv.log("🚫 Banned: $userId for ${if (minutes == 0L) "∞" else "${minutes}m"}. Reason: $reason", "WARN")
-                srv.connections.sendTo(userId, com.veryschool.server.core.WsMessage(com.veryschool.server.core.WsTypes.BANNED, "Вы заблокированы: $reason"))
+                srv.connections.sendTo(userId, WsMessage(WsTypes.BANNED, "Вы заблокированы: $reason"))
             }
         }
     }
@@ -128,6 +130,7 @@ class AdminViewModel(private val context: Context) : ViewModel() {
 
 class AdminViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        @Suppress("UNCHECKED_CAST"); return AdminViewModel(context) as T
+        @Suppress("UNCHECKED_CAST")
+        return AdminViewModel(context) as T
     }
 }

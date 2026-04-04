@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-private val TAG = "AppRepo"
+private const val TAG = "AppRepo"
 
 class AppRepository(
     private val db: AppDatabase,
@@ -19,18 +19,16 @@ class AppRepository(
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    // Один WsClient на всё время жизни репо
+    // Один WsClient живёт всё время — channel не умирает
     private val wsClient = WsClient()
     private var apiClient: ApiClient? = null
 
-    // Scope для WS соединения — отменяется при logout/переподключении
+    // Scope для WS цикла — отменяется при logout
     private var wsScope: CoroutineScope? = null
 
-    // Единый стейт подключения
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
 
-    // Room flows — живут всегда
     val chats: Flow<List<ChatEntity>> = db.chatDao().getAllChats()
     val users: Flow<List<UserEntity>> = db.userDao().getAllUsers()
 
@@ -45,12 +43,11 @@ class AppRepository(
 
     /**
      * Запускает WS с авто-переподключением.
-     * Возвращает Job — отмени его чтобы остановить.
+     * Возвращает Job — отмени чтобы остановить.
      */
     fun startWsConnection(serverUrl: String, token: String): Job {
         Log.i(TAG, "startWsConnection → $serverUrl  token=${token.take(8)}...")
 
-        // Убиваем старый scope если был
         wsScope?.cancel()
         _connected.value = false
 
@@ -74,9 +71,7 @@ class AppRepository(
                             _connected.value = false
                             Log.w(TAG, "✗ WS DISCONNECTED")
                         },
-                        onMessage = { msg ->
-                            handleIncoming(msg)
-                        }
+                        onMessage = { msg -> handleIncoming(msg) }
                     )
                 } catch (e: CancellationException) {
                     Log.i(TAG, "WS loop cancelled")
@@ -99,7 +94,7 @@ class AppRepository(
             when (msg.type) {
 
                 WsTypes.AUTH_OK -> {
-                    Log.i(TAG, "✓ AUTH_OK — server accepted us")
+                    Log.i(TAG, "✓ AUTH_OK")
                 }
 
                 WsTypes.AUTH_FAIL -> {
@@ -175,7 +170,7 @@ class AppRepository(
                 }
 
                 WsTypes.PING -> {
-                    Log.d(TAG, "PING → sending PONG")
+                    Log.d(TAG, "PING → PONG")
                     wsClient.send(WsMessage(WsTypes.PONG))
                 }
 
@@ -228,7 +223,8 @@ class AppRepository(
         Log.i(TAG, "disconnect()")
         wsScope?.cancel()
         wsScope = null
-        wsClient.close()
+        // НЕ закрываем channel — wsClient переиспользуется
+        wsClient.closeSession()
         _connected.value = false
     }
 

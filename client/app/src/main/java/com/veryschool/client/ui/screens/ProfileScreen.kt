@@ -56,7 +56,6 @@ fun ProfileScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(16.dp))
-            // Avatar
             Box(Modifier.size(110.dp).clickable { imagePicker.launch("image/*") }, contentAlignment = Alignment.Center) {
                 if (selectedAvatarUri != null) {
                     AsyncImage(model = selectedAvatarUri, contentDescription = null, modifier = Modifier.size(110.dp).clip(CircleShape), contentScale = ContentScale.Crop)
@@ -69,7 +68,6 @@ fun ProfileScreen(
             }
             Spacer(Modifier.height(20.dp))
 
-            // Info card
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = VSSurface)) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -89,7 +87,6 @@ fun ProfileScreen(
             }
             Spacer(Modifier.height(12.dp))
 
-            // Server info
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = VSSurface)) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Dns, null, tint = VSOnSurfaceMuted, modifier = Modifier.size(20.dp))
@@ -102,7 +99,6 @@ fun ProfileScreen(
             }
             Spacer(Modifier.height(12.dp))
 
-            // Change password
             OutlinedButton(onClick = { showPasswordDialog = true }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = VSPrimary), border = androidx.compose.foundation.BorderStroke(1.dp, VSPrimary)) {
                 Icon(Icons.Default.Lock, null, modifier = Modifier.size(18.dp))
@@ -111,7 +107,6 @@ fun ProfileScreen(
             }
             Spacer(Modifier.weight(1f))
 
-            // Logout
             OutlinedButton(onClick = { showLogoutDialog = true }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = VSRed), border = androidx.compose.foundation.BorderStroke(1.dp, VSRed)) {
                 Icon(Icons.Default.Logout, null, modifier = Modifier.size(20.dp))
