@@ -6,32 +6,31 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.android.*
 import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import io.ktor.websocket.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.Json
+import okhttp3.*
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "WsClient"
 
+/**
+ * WsClient на OkHttp — без конфликтов Ktor scope.
+ * connect() блокирует suspend функцию пока соединение живо.
+ */
 class WsClient {
 
-    private val httpClient = HttpClient(Android) {
-        install(WebSockets) {
-            pingInterval = 20_000L
-        }
-        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-    }
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    // Channel живёт всё время — не закрываем никогда
-    private val outgoing = Channel<String>(Channel.UNLIMITED)
+    private val okClient = OkHttpClient.Builder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)   // бесконечный таймаут для WS
+        .pingInterval(20, TimeUnit.SECONDS)
+        .build()
 
-    // Текущая сессия — нужна чтобы sendLoop мог писать в неё
-    @Volatile private var activeSession: DefaultWebSocketSession? = null
+    @Volatile private var ws: WebSocket? = null
 
     suspend fun connect(
         serverUrl: String,
@@ -45,86 +44,85 @@ class WsClient {
             .replace("https://", "wss://")
         val fullUrl = if (wsUrl.endsWith("/")) "${wsUrl}ws" else "$wsUrl/ws"
 
-        Log.i(TAG, "→ Connecting to $fullUrl")
+        Log.i(TAG, "Connecting to $fullUrl")
 
-        // Запускаем sendLoop в отдельной корутине СНАРУЖИ webSocket scope
-        // чтобы избежать конфликта Ktor extension функций
-        val sendLoop = CoroutineScope(Dispatchers.IO).launch {
-            while (isActive) {
-                val session = activeSession
-                if (session != null) {
-                    val msgText = outgoing.tryReceive().getOrNull()
-                    if (msgText != null) {
-                        try {
-                            session.send(Frame.Text(msgText))
-                            Log.d(TAG, "→ Sent: ${msgText.substring(0, minOf(80, msgText.length))}")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Send error: ${e.message}")
-                        }
-                    } else {
-                        delay(10)
+        // CompletableDeferred — разблокируется когда соединение закрывается
+        val done = CompletableDeferred<Unit>()
+
+        val request = Request.Builder().url(fullUrl).build()
+
+        val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                ws = webSocket
+                Log.i(TAG, "Connected! Sending AUTH...")
+                val authMsg = json.encodeToString(WsMessage(WsTypes.AUTH, token))
+                webSocket.send(authMsg)
+                onConnected()
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                Log.d(TAG, "< raw: ${text.substring(0, minOf(120, text.length))}")
+                try {
+                    val msg = json.decodeFromString<WsMessage>(text)
+                    Log.i(TAG, "< type=${msg.type} len=${msg.payload.length}")
+                    // Запускаем suspend обработчик в IO
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try { onMessage(msg) }
+                        catch (e: Exception) { Log.e(TAG, "onMessage handler error: ${e.message}") }
                     }
-                } else {
-                    delay(50)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Parse error: ${e.message}")
                 }
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "Closing: $code $reason")
+                webSocket.close(1000, null)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.w(TAG, "Closed: $code $reason")
+                ws = null
+                onDisconnected()
+                done.complete(Unit)
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.e(TAG, "Failure: ${t.message}")
+                ws = null
+                onDisconnected()
+                done.complete(Unit)
             }
         }
 
+        okClient.newWebSocket(request, listener)
+
+        // Ждём пока соединение закроется (блокируем корутину)
         try {
-            httpClient.webSocket(fullUrl) {
-                activeSession = this
-                onConnected()
-                Log.i(TAG, "✓ Connected. Sending AUTH token...")
-
-                val authMsg = Json.encodeToString(WsMessage(WsTypes.AUTH, token))
-                send(Frame.Text(authMsg))
-
-                try {
-                    for (frame in incoming) {
-                        when (frame) {
-                            is Frame.Text -> {
-                                val raw = frame.readText()
-                                Log.d(TAG, "← raw: ${raw.substring(0, minOf(120, raw.length))}")
-                                try {
-                                    val msg = Json { ignoreUnknownKeys = true }
-                                        .decodeFromString<WsMessage>(raw)
-                                    Log.i(TAG, "← MSG type=${msg.type} payloadLen=${msg.payload.length}")
-                                    onMessage(msg)
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Parse error: ${e.message}")
-                                }
-                            }
-                            is Frame.Close -> Log.w(TAG, "← Close frame")
-                            is Frame.Ping -> {
-                                Log.d(TAG, "← Ping → Pong")
-                                send(Frame.Pong(frame.data))
-                            }
-                            else -> {}
-                        }
-                    }
-                } finally {
-                    activeSession = null
-                }
-            }
+            done.await()
         } catch (e: CancellationException) {
-            Log.i(TAG, "WS cancelled")
+            Log.i(TAG, "connect cancelled — closing WS")
+            ws?.close(1000, "cancelled")
+            ws = null
             throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "WS error: ${e::class.simpleName}: ${e.message}")
-        } finally {
-            activeSession = null
-            sendLoop.cancel()
-            onDisconnected()
-            Log.i(TAG, "✗ Disconnected")
         }
     }
 
     fun send(message: WsMessage) {
-        val text = Json.encodeToString(message)
-        val result = outgoing.trySend(text)
-        if (result.isFailure) {
-            Log.e(TAG, "Send queue full! Dropped: ${message.type}")
+        val text = json.encodeToString(message)
+        val socket = ws
+        if (socket != null) {
+            val ok = socket.send(text)
+            if (!ok) Log.e(TAG, "send() failed — WS closed? msg=${message.type}")
+            else Log.d(TAG, "> sent: ${message.type}")
+        } else {
+            Log.w(TAG, "send() skipped — no active connection. msg=${message.type}")
         }
+    }
+
+    fun close() {
+        ws?.close(1000, "logout")
+        ws = null
     }
 }
 

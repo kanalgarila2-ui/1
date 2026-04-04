@@ -87,6 +87,9 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
     
+    // OkHttp для WebSocket (надёжнее чем Ktor WS на Android)
+    implementation(libs.okhttp)
+
     // DataStore
     implementation(libs.datastore.preferences)
     
