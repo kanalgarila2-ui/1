@@ -13,17 +13,11 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.consumeEach
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 private const val TAG = "WsClient"
 
-/**
- * WS клиент.
- * - connect() блокирует корутину пока соединение живо
- * - Channel НЕ закрывается при disconnect — переиспользуется между реконнектами
- */
 class WsClient {
 
     private val httpClient = HttpClient(Android) {
@@ -33,8 +27,11 @@ class WsClient {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
     }
 
-    // ВАЖНО: Channel живёт всё время жизни WsClient — НЕ закрываем его никогда
+    // Channel живёт всё время — не закрываем никогда
     private val outgoing = Channel<String>(Channel.UNLIMITED)
+
+    // Текущая сессия — нужна чтобы sendLoop мог писать в неё
+    @Volatile private var activeSession: DefaultWebSocketSession? = null
 
     suspend fun connect(
         serverUrl: String,
@@ -50,45 +47,51 @@ class WsClient {
 
         Log.i(TAG, "→ Connecting to $fullUrl")
 
+        // Запускаем sendLoop в отдельной корутине СНАРУЖИ webSocket scope
+        // чтобы избежать конфликта Ktor extension функций
+        val sendLoop = CoroutineScope(Dispatchers.IO).launch {
+            while (isActive) {
+                val session = activeSession
+                if (session != null) {
+                    val msgText = outgoing.tryReceive().getOrNull()
+                    if (msgText != null) {
+                        try {
+                            session.send(Frame.Text(msgText))
+                            Log.d(TAG, "→ Sent: ${msgText.substring(0, minOf(80, msgText.length))}")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Send error: ${e.message}")
+                        }
+                    } else {
+                        delay(10)
+                    }
+                } else {
+                    delay(50)
+                }
+            }
+        }
+
         try {
             httpClient.webSocket(fullUrl) {
+                activeSession = this
                 onConnected()
                 Log.i(TAG, "✓ Connected. Sending AUTH token...")
-                send(Frame.Text(Json.encodeToString(WsMessage(WsTypes.AUTH, token))))
 
-                // Отправка исходящих — читаем через tryReceive в цикле
-                // чтобы не конфликтовать с Ktor receiver scope
-                val sendJob = launch {
-                    while (isActive) {
-                        val result = outgoing.tryReceive()
-                        if (result.isSuccess) {
-                            val text = result.getOrNull() ?: continue
-                            Log.d(TAG, "→ Sending: ${text.take(80)}")
-                            try {
-                                send(Frame.Text(text))
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Send error: ${e.message}")
-                            }
-                        } else {
-                            // Нет сообщений — небольшая пауза чтобы не жечь CPU
-                            delay(10)
-                        }
-                    }
-                }
+                val authMsg = Json.encodeToString(WsMessage(WsTypes.AUTH, token))
+                send(Frame.Text(authMsg))
 
                 try {
                     for (frame in incoming) {
                         when (frame) {
                             is Frame.Text -> {
                                 val raw = frame.readText()
-                                Log.d(TAG, "← raw: ${raw.take(120)}")
+                                Log.d(TAG, "← raw: ${raw.substring(0, minOf(120, raw.length))}")
                                 try {
                                     val msg = Json { ignoreUnknownKeys = true }
                                         .decodeFromString<WsMessage>(raw)
                                     Log.i(TAG, "← MSG type=${msg.type} payloadLen=${msg.payload.length}")
                                     onMessage(msg)
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Parse error: ${e.message} | raw=${raw.take(200)}")
+                                    Log.e(TAG, "Parse error: ${e.message}")
                                 }
                             }
                             is Frame.Close -> Log.w(TAG, "← Close frame")
@@ -100,7 +103,7 @@ class WsClient {
                         }
                     }
                 } finally {
-                    sendJob.cancel()
+                    activeSession = null
                 }
             }
         } catch (e: CancellationException) {
@@ -109,6 +112,8 @@ class WsClient {
         } catch (e: Exception) {
             Log.e(TAG, "WS error: ${e::class.simpleName}: ${e.message}")
         } finally {
+            activeSession = null
+            sendLoop.cancel()
             onDisconnected()
             Log.i(TAG, "✗ Disconnected")
         }
