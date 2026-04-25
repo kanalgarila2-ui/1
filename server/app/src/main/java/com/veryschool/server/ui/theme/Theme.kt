@@ -1,30 +1,47 @@
 package com.veryschool.server.ui.theme
 
+import android.content.res.Configuration
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
-val AdminPrimary = Color(0xFF00B894)
-val AdminSecondary = Color(0xFF6C5CE7)
-val AdminBackground = Color(0xFF0A0A0F)
-val AdminSurface = Color(0xFF14141F)
-val AdminSurfaceVariant = Color(0xFF1E1E2E)
-val AdminOnSurface = Color(0xFFE8E8F0)
-val AdminOnSurfaceMuted = Color(0xFF7070A0)
-val AdminBorder = Color(0xFF2A2A3E)
-val AdminGreen = Color(0xFF00B894)
-val AdminRed = Color(0xFFFF4757)
-val AdminYellow = Color(0xFFFFA502)
+val AdminPrimary   = Color(0xFF00B894)
+val AdminSecondary = Color(0xFF8B5CF6)
+val AdminBg        = Color(0xFF0A0A0F)
+val AdminSurf      = Color(0xFF131320)
+val AdminCard      = Color(0xFF1A1A2E)
+val AdminBorder    = Color(0xFF2D2D50)
+val AdminOn        = Color(0xFFE8E8F5)
+val AdminMuted     = Color(0xFF8888AA)
+val AdminGreen     = Color(0xFF10B981)
+val AdminRed       = Color(0xFFEF4444)
+val AdminYellow    = Color(0xFFF59E0B)
 
-private val AdminColorScheme = darkColorScheme(
-    primary = AdminPrimary, secondary = AdminSecondary,
-    background = AdminBackground, surface = AdminSurface,
-    surfaceVariant = AdminSurfaceVariant, onPrimary = Color.White,
-    onBackground = AdminOnSurface, onSurface = AdminOnSurface,
-    onSurfaceVariant = AdminOnSurfaceMuted, outline = AdminBorder, error = AdminRed
+val LocalAdminTC = compositionLocalOf { AdminTC() }
+data class AdminTC(val x: Int = 0) {
+    val bg = AdminBg; val surf = AdminSurf; val card = AdminCard
+    val border = AdminBorder; val on = AdminOn; val muted = AdminMuted
+}
+
+private val CS = darkColorScheme(
+    primary = AdminPrimary, secondary = AdminSecondary, background = AdminBg,
+    surface = AdminSurf, surfaceVariant = AdminCard, onPrimary = Color.White,
+    onBackground = AdminOn, onSurface = AdminOn, onSurfaceVariant = AdminMuted,
+    outline = AdminBorder, error = AdminRed
 )
 
 @Composable
 fun VSAdminTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = AdminColorScheme, content = content)
+    CompositionLocalProvider(LocalAdminTC provides AdminTC()) {
+        MaterialTheme(colorScheme = CS,
+            typography = Typography(
+                titleLarge = TextStyle(fontWeight = FontWeight.Bold, fontSize = 20.sp),
+                titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
+                bodyLarge = TextStyle(fontSize = 15.sp), bodyMedium = TextStyle(fontSize = 13.sp)
+            ), content = content)
+    }
 }

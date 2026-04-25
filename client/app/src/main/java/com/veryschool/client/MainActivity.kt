@@ -1,192 +1,158 @@
 package com.veryschool.client
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import com.veryschool.client.data.db.ChatEntity
-import com.veryschool.client.service.WsConnectionService
+import androidx.navigation.compose.*
+import com.veryschool.client.notifications.NotificationHelper
 import com.veryschool.client.ui.*
 import com.veryschool.client.ui.screens.*
 import com.veryschool.client.ui.theme.VerySchoolTheme
 import kotlinx.coroutines.flow.collectLatest
 
-object Routes {
-    const val CONNECT = "connect"
-    const val AUTH = "auth"
+object Nav {
+    const val AUTH      = "auth"
     const val CHAT_LIST = "chat_list"
-    const val CHAT = "chat/{chatId}"
-    const val PROFILE = "profile"
-    const val USER_PROFILE = "user_profile/{userId}"
-    fun chat(chatId: String) = "chat/$chatId"
-    fun userProfile(userId: String) = "user_profile/$userId"
+    const val PROFILE   = "profile"
+    const val SETTINGS  = "settings"
+    const val CHAT      = "chat/{chatId}"
+    const val USER_PROF = "user/{userId}"
+    fun chat(id: String) = "chat/$id"
+    fun user(id: String) = "user/$id"
 }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationHelper(this).createChannels()
         enableEdgeToEdge()
-        requestNotificationPermission()
-
-        // Запускаем foreground service для удержания WS в фоне
-        WsConnectionService.start(this)
-
         setContent {
-            VerySchoolTheme {
-                val vm: MainViewModel = viewModel(factory = MainViewModelFactory(applicationContext))
-                val navController = rememberNavController()
-
-                val authState by vm.authState.collectAsStateWithLifecycle()
-                val currentUserId by vm.currentUserId.collectAsStateWithLifecycle()
-                val username by vm.currentUsername.collectAsStateWithLifecycle()
-                val displayName by vm.displayName.collectAsStateWithLifecycle()
-                val avatar by vm.avatar.collectAsStateWithLifecycle()
-                val serverUrl by vm.serverUrl.collectAsStateWithLifecycle()
-                val chats by vm.chats.collectAsStateWithLifecycle()
-                val users by vm.users.collectAsStateWithLifecycle()
-                val messages by vm.selectedChatMessages.collectAsStateWithLifecycle()
-                val connected by vm.connected.collectAsStateWithLifecycle(false)
+            val vm: MainViewModel = viewModel(factory = MainViewModelFactory(applicationContext))
+            val theme by vm.theme.collectAsStateWithLifecycle()
+            VerySchoolTheme(appTheme = theme) {
+                val nav = rememberNavController()
+                val authState    by vm.authState.collectAsStateWithLifecycle()
+                val currentUid   by vm.userId.collectAsStateWithLifecycle()
+                val displayName  by vm.displayName.collectAsStateWithLifecycle()
+                val avatarUrl    by vm.avatarUrl.collectAsStateWithLifecycle()
+                val isAdmin      by vm.isAdmin.collectAsStateWithLifecycle()
+                val chats        by vm.chats.collectAsStateWithLifecycle()
+                val users        by vm.users.collectAsStateWithLifecycle()
+                val messages     by vm.messages.collectAsStateWithLifecycle()
+                val optimistic   by vm.optimisticMessages.collectAsStateWithLifecycle()
+                val currentChat  by vm.currentChat.collectAsStateWithLifecycle()
+                val appTheme     by vm.theme.collectAsStateWithLifecycle()
+                val notifMsg     by vm.notifMsg.collectAsStateWithLifecycle()
+                val notifSys     by vm.notifSys.collectAsStateWithLifecycle()
+                val notifErr     by vm.notifErr.collectAsStateWithLifecycle()
+                val notifSound   by vm.notifSound.collectAsStateWithLifecycle()
+                val notifVib     by vm.notifVib.collectAsStateWithLifecycle()
 
                 LaunchedEffect(Unit) {
                     vm.uiEvent.collectLatest { event ->
                         when (event) {
-                            is UiEvent.Error -> Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_LONG).show()
+                            is UiEvent.Error   -> Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_LONG).show()
                             is UiEvent.Success -> Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_SHORT).show()
+                            is UiEvent.NavigateToChat -> {
+                                val chat = chats.firstOrNull { it.id == event.chatId }
+                                if (chat != null) { vm.openChat(chat); nav.navigate(Nav.chat(event.chatId)) }
+                            }
                         }
                     }
                 }
 
                 LaunchedEffect(authState) {
-                    val dest = when (authState) {
-                        AuthState.NeedServer -> Routes.CONNECT
-                        AuthState.NeedAuth -> Routes.AUTH
-                        AuthState.Authenticated -> Routes.CHAT_LIST
-                        AuthState.Unknown -> return@LaunchedEffect
+                    when (authState) {
+                        AuthState.Auth    -> nav.navigate(Nav.CHAT_LIST) { popUpTo(0) { inclusive = true } }
+                        AuthState.NotAuth -> nav.navigate(Nav.AUTH)      { popUpTo(0) { inclusive = true } }
+                        AuthState.Unknown -> {}
                     }
-                    navController.navigate(dest) { popUpTo(0) { inclusive = true } }
                 }
 
-                var currentChat by remember { mutableStateOf<ChatEntity?>(null) }
+                NavHost(nav, startDestination = Nav.AUTH) {
 
-                NavHost(navController = navController, startDestination = Routes.CONNECT) {
-                    composable(Routes.CONNECT) {
-                        ConnectScreen(onConnect = { ip, _ -> vm.saveServer(ip) })
-                    }
-                    composable(Routes.AUTH) {
+                    composable(Nav.AUTH) {
                         AuthScreen(
-                            onLogin = { u, p, ph -> vm.login(u, p, ph) },
-                            onRegister = { u, p, dn, ph -> vm.register(u, p, dn, ph) }
+                            onLogin    = { e, p, ph -> vm.login(e, p, ph) },
+                            onRegister = { e, p, u, dn, ph -> vm.register(e, p, u, dn, ph) }
                         )
                     }
-                    composable(Routes.CHAT_LIST) {
+
+                    composable(Nav.CHAT_LIST) {
                         ChatListScreen(
-                            chats = chats, users = users, currentUserId = currentUserId,
-                            displayName = displayName, avatarBase64 = avatar, connected = connected,
-                            onChatClick = { chat ->
-                                currentChat = chat
-                                vm.openChat(chat.id)
-                                navController.navigate(Routes.chat(chat.id))
-                            },
-                            onNewDm = { user ->
-                                val existing = chats.firstOrNull { c ->
-                                    !c.isGroup && c.members.contains(user.id) && c.members.contains(currentUserId)
-                                }
-                                if (existing != null) {
-                                    currentChat = existing
-                                    vm.openChat(existing.id)
-                                    navController.navigate(Routes.chat(existing.id))
-                                } else vm.startDm(user.id)
-                            },
-                            onNewGroup = { name, ids -> vm.createGroup(name, ids) },
-                            onProfile = { navController.navigate(Routes.PROFILE) }
+                            chats = chats, users = users,
+                            currentUserId = currentUid, displayName = displayName, avatarUrl = avatarUrl,
+                            onChatClick = { chat -> vm.openChat(chat); nav.navigate(Nav.chat(chat.id)) },
+                            onNewDm     = { user -> vm.startDm(user) },
+                            onNewGroup  = { name, ids -> vm.createGroup(name, ids) },
+                            onProfile   = { nav.navigate(Nav.PROFILE) },
+                            onSettings  = { nav.navigate(Nav.SETTINGS) }
                         )
                     }
-                    composable(Routes.CHAT) { backStack ->
-                        val chatId = backStack.arguments?.getString("chatId") ?: return@composable
-                        val chat = currentChat ?: chats.firstOrNull { it.id == chatId }
+
+                    composable(Nav.CHAT) { back ->
+                        val chatId = back.arguments?.getString("chatId") ?: return@composable
+                        val chat = currentChat ?: chats.firstOrNull { it.id == chatId } ?: return@composable
+                        val me = users.firstOrNull { it.id == currentUid }
                         ChatScreen(
-                            chatName = chat?.name ?: chatId,
-                            chatAvatar = chat?.avatarBase64 ?: "",
-                            isGroup = chat?.isGroup ?: false,
-                            messages = messages,
-                            currentUserId = currentUserId,
-                            users = users,
-                            onBack = { navController.popBackStack() },
-                            onSendText = { text -> vm.sendMessage(chatId, text) },
-                            onSendImage = { uri -> vm.sendImageMessage(chatId, uri, this@MainActivity) },
-                            onReact = { msgId, emoji -> vm.sendReaction(msgId, chatId, emoji) },
-                            onTyping = { vm.sendTyping(chatId) },
-                            onTypingStop = { vm.sendTypingStop(chatId) },
-                            onUserProfileClick = { userId -> navController.navigate(Routes.userProfile(userId)) }
+                            chat = chat, messages = messages, optimisticMessages = optimistic,
+                            currentUserId = currentUid,
+                            currentUserFrozen = me?.isFrozen ?: false,
+                            users = users, isAdmin = isAdmin,
+                            onBack       = { nav.popBackStack() },
+                            onSendText   = { vm.sendMessage(chatId, it) },
+                            onSendImage  = { vm.sendImage(chatId, it) },
+                            onReact      = { msgId, emoji -> vm.addReaction(chatId, msgId, emoji) },
+                            onDelete     = { msgId -> vm.deleteMessage(chatId, msgId) },
+                            onPin        = { msgId, text -> vm.pinMessage(chatId, msgId, text) },
+                            onUserClick  = { uid -> nav.navigate(Nav.user(uid)) }
                         )
                     }
-                    composable(Routes.PROFILE) {
+
+                    composable(Nav.PROFILE) {
                         ProfileScreen(
-                            userId = currentUserId, username = username,
-                            displayName = displayName, avatarBase64 = avatar, serverUrl = serverUrl,
-                            onBack = { navController.popBackStack() },
-                            onSave = { dn, uri -> vm.updateProfile(dn, uri, this@MainActivity) },
-                            onChangePassword = { old, new -> vm.changePassword(old, new) },
-                            onLogout = {
-                                vm.logout()
-                                WsConnectionService.stop(this@MainActivity)
-                                navController.navigate(Routes.AUTH) { popUpTo(0) { inclusive = true } }
-                            }
+                            userId = currentUid, username = "", displayName = displayName,
+                            avatarUrl = avatarUrl, isAdmin = isAdmin,
+                            onBack     = { nav.popBackStack() },
+                            onSave     = { dn, uri -> vm.updateProfile(dn, uri, this@MainActivity) },
+                            onLogout   = { vm.logout() },
+                            onSettings = { nav.navigate(Nav.SETTINGS) }
                         )
                     }
-                    composable(Routes.USER_PROFILE) { backStack ->
-                        val userId = backStack.arguments?.getString("userId") ?: return@composable
-                        val user = users.firstOrNull { it.id == userId }
+
+                    composable(Nav.SETTINGS) {
+                        SettingsScreen(
+                            theme = appTheme, notifMsg = notifMsg, notifSys = notifSys,
+                            notifErr = notifErr, notifSound = notifSound, notifVib = notifVib,
+                            cacheSize   = vm.getCacheSize(this@MainActivity),
+                            onTheme     = vm::setTheme,
+                            onNotifMsg  = vm::setNotifMsg, onNotifSys = vm::setNotifSys,
+                            onNotifErr  = vm::setNotifErr, onNotifSound = vm::setNotifSound,
+                            onNotifVib  = vm::setNotifVib,
+                            onClearCache  = { vm.clearCache(this@MainActivity) },
+                            onExportChats = { vm.exportChats(this@MainActivity) },
+                            onBack = { nav.popBackStack() }
+                        )
+                    }
+
+                    composable(Nav.USER_PROF) { back ->
+                        val uid = back.arguments?.getString("userId") ?: return@composable
+                        val user = users.firstOrNull { it.id == uid } ?: return@composable
                         UserProfileScreen(
-                            userId = userId,
-                            displayName = user?.displayName ?: userId,
-                            username = user?.username ?: "",
-                            avatarBase64 = user?.avatarBase64 ?: "",
-                            online = user?.online ?: false,
-                            onBack = { navController.popBackStack() },
-                            onSendMessage = {
-                                val existing = chats.firstOrNull { c ->
-                                    !c.isGroup && c.members.contains(userId) && c.members.contains(currentUserId)
-                                }
-                                if (existing != null) {
-                                    currentChat = existing
-                                    vm.openChat(existing.id)
-                                    navController.navigate(Routes.chat(existing.id)) {
-                                        popUpTo(Routes.CHAT_LIST)
-                                    }
-                                } else vm.startDm(userId)
-                            }
+                            user = user, isAdmin = isAdmin,
+                            onBack        = { nav.popBackStack() },
+                            onSendMessage = { vm.startDm(user) },
+                            onBan    = { if (user.isBanned) vm.adminUnban(uid) else vm.adminBan(uid, "Нарушение правил") },
+                            onFreeze = { if (user.isFrozen) vm.adminUnfreeze(uid) else vm.adminFreeze(uid) }
                         )
                     }
                 }
             }
         }
-    }
-
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Не останавливаем сервис при onDestroy — он должен жить в фоне
-        // Останавливается только при logout
     }
 }

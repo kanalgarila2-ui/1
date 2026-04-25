@@ -1,14 +1,16 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package com.veryschool.server.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,186 +18,137 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.veryschool.server.data.ChatEntity
-import com.veryschool.server.data.UserEntity
+import com.veryschool.server.data.models.*
 import com.veryschool.server.ui.theme.*
+import java.text.SimpleDateFormat
+import java.util.*
 
+// ── Login ─────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdminLoginScreen(onLogin: (String, String) -> Unit) {
+    val tc = LocalAdminTC.current
+    var email by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    val fc = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on, cursorColor = AdminPrimary)
+    Box(Modifier.fillMaxSize().background(tc.bg), contentAlignment = Alignment.Center) {
+        Card(Modifier.width(320.dp), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+            Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("VS Admin", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = AdminPrimary)
+                Text("Панель администратора", color = tc.muted, fontSize = 13.sp)
+                OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, colors = fc, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+                OutlinedTextField(value = pass, onValueChange = { pass = it }, label = { Text("Пароль") }, colors = fc, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp), visualTransformation = PasswordVisualTransformation())
+                Button(onClick = { onLogin(email, pass) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = AdminPrimary)) {
+                    Text("Войти", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboard(
-    serverRunning: Boolean, localIp: String, publicIp: String, onlineCount: Int,
-    userCount: Int, chatCount: Int, msgCount: Int, logs: List<String>,
-    users: List<UserEntity>, chats: List<ChatEntity>,
-    onStart: () -> Unit, onStop: () -> Unit, onRestart: () -> Unit,
-    onDeleteUser: (String) -> Unit, onSetAdmin: (String, Boolean) -> Unit,
-    onBanUser: (String, Long, String) -> Unit, onUnbanUser: (String) -> Unit,
-    onBlockDm: (String, Long) -> Unit, onUnblockDm: (String) -> Unit,
-    onSendBotMessage: (String, String) -> Unit,
-    onDeleteChat: (String) -> Unit, onClearLogs: () -> Unit
+    users: List<UserModel>, chats: List<ChatModel>, logs: List<LogModel>,
+    passphrases: List<String>,
+    onBan: (String, String) -> Unit, onUnban: (String) -> Unit,
+    onFreeze: (String) -> Unit, onUnfreeze: (String) -> Unit,
+    onDeleteUser: (String) -> Unit, onUpdateUser: (String, Map<String, Any>) -> Unit,
+    onDeleteMsg: (String, String) -> Unit,
+    onBotToUser: (String, String) -> Unit, onBotBroadcast: (String) -> Unit,
+    onSavePassphrases: (List<String>) -> Unit,
+    onOpenChat: (String) -> Unit
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Сервер", "Логи", "Юзеры", "Чаты", "Бот")
+    val tc = LocalAdminTC.current
+    var tab by remember { mutableStateOf(0) }
+    val tabs = listOf("Юзеры", "Чаты", "Логи", "Бот", "Фразы")
 
-    Scaffold(containerColor = AdminBackground, topBar = {
-        TopAppBar(title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("VS", fontWeight = FontWeight.ExtraBold, color = AdminPrimary, fontSize = 22.sp)
-                Text("Admin", fontWeight = FontWeight.ExtraBold, color = AdminOnSurface, fontSize = 22.sp)
-                Box(Modifier.size(10.dp).background(if (serverRunning) AdminGreen else AdminRed, CircleShape))
-                if (onlineCount > 0) Surface(shape = RoundedCornerShape(50), color = AdminPrimary.copy(0.2f)) {
-                    Text(" $onlineCount онлайн ", color = AdminPrimary, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                }
-            }
-        }, colors = TopAppBarDefaults.topAppBarColors(containerColor = AdminSurface))
-    }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            ScrollableTabRow(selectedTabIndex = selectedTab, containerColor = AdminSurface, contentColor = AdminPrimary, edgePadding = 0.dp) {
-                tabs.forEachIndexed { i, label ->
-                    Tab(selected = selectedTab == i, onClick = { selectedTab = i },
-                        text = { Text(label, fontWeight = if (selectedTab == i) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp) })
-                }
-            }
-            when (selectedTab) {
-                0 -> ServerTab(serverRunning, localIp, publicIp, onlineCount, userCount, chatCount, msgCount, onStart, onStop, onRestart)
-                1 -> LogsTab(logs, onClearLogs)
-                2 -> UsersTab(users, onDeleteUser, onSetAdmin, onBanUser, onUnbanUser, onBlockDm, onUnblockDm)
-                3 -> ChatsTab(chats, onDeleteChat)
-                4 -> BotTab(users, onSendBotMessage)
-            }
-        }
-    }
-}
-
-@Composable
-fun ServerTab(running: Boolean, localIp: String, publicIp: String, onlineCount: Int, userCount: Int, chatCount: Int, msgCount: Int, onStart: () -> Unit, onStop: () -> Unit, onRestart: () -> Unit) {
-    val clipboard = LocalClipboardManager.current
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = AdminSurface), modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(if (running) Icons.Default.CheckCircle else Icons.Default.Cancel, null, tint = if (running) AdminGreen else AdminRed, modifier = Modifier.size(32.dp))
-                    Column { Text(if (running) "Сервер работает" else "Остановлен", color = AdminOnSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                        Text("Порт 8080 • WebSocket + HTTP", color = AdminOnSurfaceMuted, fontSize = 12.sp) }
-                }
-            }
-        }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("👥", "$userCount", "Юзеры", Modifier.weight(1f))
-                StatCard("💬", "$chatCount", "Чаты", Modifier.weight(1f))
-                StatCard("📨", "$msgCount", "Сообщ.", Modifier.weight(1f))
-                StatCard("🟢", "$onlineCount", "Онлайн", Modifier.weight(1f))
-            }
-        }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onStart, enabled = !running, colors = ButtonDefaults.buttonColors(containerColor = AdminGreen, disabledContainerColor = AdminBorder), modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Старт", fontSize = 13.sp) }
-                Button(onClick = onStop, enabled = running, colors = ButtonDefaults.buttonColors(containerColor = AdminRed, disabledContainerColor = AdminBorder), modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Stop, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("Стоп", fontSize = 13.sp) }
-                Button(onClick = onRestart, colors = ButtonDefaults.buttonColors(containerColor = AdminYellow), modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(14.dp)) { Icon(Icons.Default.Refresh, null, Modifier.size(18.dp), tint = Color.Black); Spacer(Modifier.width(4.dp)); Text("Рестарт", fontSize = 13.sp, color = Color.Black) }
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = AdminSurface), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Адреса", color = AdminOnSurface, fontWeight = FontWeight.Bold)
-                    IpRow("🏠 Локальная сеть", localIp) { clipboard.setText(AnnotatedString(localIp)) }
-                    IpRow("🌍 Публичный IP", publicIp) { clipboard.setText(AnnotatedString(publicIp)) }
-                    HorizontalDivider(color = AdminBorder)
+    Scaffold(
+        containerColor = tc.bg,
+        topBar = {
+            TopAppBar(
+                title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Key, null, tint = AdminPrimary, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Column { Text("Ключевая фраза", color = AdminOnSurfaceMuted, fontSize = 12.sp); Text("22sch", color = AdminPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, fontFamily = FontFamily.Monospace) }
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { clipboard.setText(AnnotatedString("22sch")) }) { Icon(Icons.Default.ContentCopy, null, tint = AdminOnSurfaceMuted) }
+                        Text("VS", fontWeight = FontWeight.ExtraBold, color = AdminPrimary, fontSize = 22.sp)
+                        Spacer(Modifier.width(6.dp)); Text("Admin", color = tc.on, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Surface(shape = RoundedCornerShape(50), color = AdminPrimary.copy(0.2f)) {
+                            Text(" ${users.size} 👥  ${chats.size} 💬 ", color = AdminPrimary, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                        }
                     }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = tc.surf)
+            )
+        }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            ScrollableTabRow(selectedTabIndex = tab, containerColor = tc.surf, contentColor = AdminPrimary, edgePadding = 0.dp) {
+                tabs.forEachIndexed { i, label ->
+                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(label, fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp) })
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun StatCard(emoji: String, value: String, label: String, modifier: Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = AdminSurface)) {
-        Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, color = AdminPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Text(label, color = AdminOnSurfaceMuted, fontSize = 9.sp)
-        }
-    }
-}
-
-@Composable fun IpRow(label: String, ip: String, onCopy: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(label, color = AdminOnSurfaceMuted, fontSize = 11.sp); Text(ip, color = AdminOnSurface, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace, fontSize = 13.sp) }
-        IconButton(onClick = onCopy) { Icon(Icons.Default.ContentCopy, null, tint = AdminPrimary, modifier = Modifier.size(18.dp)) }
-    }
-}
-
-@Composable
-fun LogsTab(logs: List<String>, onClear: () -> Unit) {
-    val state = rememberLazyListState()
-    LaunchedEffect(logs.size) { if (logs.isNotEmpty()) state.animateScrollToItem(logs.size - 1) }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("${logs.size} записей", color = AdminOnSurfaceMuted, fontSize = 12.sp)
-            TextButton(onClick = onClear) { Text("Очистить", color = AdminRed, fontSize = 12.sp) }
-        }
-        LazyColumn(state = state, modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            items(logs) { log ->
-                val color = when { "[ERROR]" in log -> AdminRed; "[WARN]" in log || "❌" in log || "🚫" in log -> AdminYellow; "✅" in log || "👤" in log -> AdminGreen; "💬" in log || "🤖" in log -> AdminPrimary; else -> AdminOnSurface }
-                Text(log, color = color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.fillMaxWidth().background(AdminSurface.copy(0.4f), RoundedCornerShape(3.dp)).padding(horizontal = 6.dp, vertical = 2.dp))
+            when (tab) {
+                0 -> UsersTab(users, onBan, onUnban, onFreeze, onUnfreeze, onDeleteUser, onUpdateUser)
+                1 -> ChatsTab(chats, onOpenChat, onDeleteMsg)
+                2 -> LogsTab(logs)
+                3 -> BotTab(users, onBotToUser, onBotBroadcast)
+                4 -> PassphrasesTab(passphrases, onSavePassphrases)
             }
         }
     }
 }
 
 @Composable
-fun UsersTab(users: List<UserEntity>, onDelete: (String) -> Unit, onSetAdmin: (String, Boolean) -> Unit, onBan: (String, Long, String) -> Unit, onUnban: (String) -> Unit, onBlockDm: (String, Long) -> Unit, onUnblockDm: (String) -> Unit) {
-    var confirmDelete by remember { mutableStateOf<String?>(null) }
-    var showBanDialog by remember { mutableStateOf<String?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-    val filtered = users.filter { searchQuery.isBlank() || it.username.contains(searchQuery, ignoreCase = true) || it.displayName.contains(searchQuery, ignoreCase = true) || it.id.contains(searchQuery) }
+private fun UsersTab(users: List<UserModel>, onBan: (String, String) -> Unit, onUnban: (String) -> Unit, onFreeze: (String) -> Unit, onUnfreeze: (String) -> Unit, onDelete: (String) -> Unit, onUpdate: (String, Map<String, Any>) -> Unit) {
+    val tc = LocalAdminTC.current
+    var search by remember { mutableStateOf("") }
+    var editUser by remember { mutableStateOf<UserModel?>(null) }
+    var banTarget by remember { mutableStateOf<String?>(null) }
+    val filtered = if (search.isBlank()) users else users.filter { it.username.contains(search, ignoreCase = true) || it.displayName.contains(search, ignoreCase = true) || it.id.contains(search) }
+    val fc = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on)
 
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it },
-            placeholder = { Text("Поиск юзеров...", color = AdminOnSurfaceMuted) },
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = AdminBorder, focusedTextColor = AdminOnSurface, unfocusedTextColor = AdminOnSurface),
-            shape = RoundedCornerShape(12.dp), singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = AdminOnSurfaceMuted) })
-
+        OutlinedTextField(value = search, onValueChange = { search = it }, placeholder = { Text("Поиск...", color = tc.muted) },
+            modifier = Modifier.fillMaxWidth().padding(12.dp), colors = fc, shape = RoundedCornerShape(12.dp), singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = tc.muted) })
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            item { Text("${filtered.size} из ${users.size} пользователей", color = AdminOnSurfaceMuted, fontSize = 12.sp) }
+            item { Text("${filtered.size} из ${users.size}", color = tc.muted, fontSize = 12.sp) }
             items(filtered, key = { it.id }) { user ->
-                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = if (user.isBanned) AdminRed.copy(0.1f) else AdminSurface), modifier = Modifier.fillMaxWidth()) {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = if (user.isBanned) AdminRed.copy(0.08f) else tc.surf), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(40.dp).background(AdminSecondary.copy(0.2f), CircleShape), contentAlignment = Alignment.Center) {
-                                Text(user.displayName.firstOrNull()?.uppercase() ?: "?", color = AdminSecondary, fontWeight = FontWeight.Bold)
+                            Box(Modifier.size(42.dp).background(AdminPrimary.copy(0.2f), CircleShape), contentAlignment = Alignment.Center) {
+                                Text(user.displayName.firstOrNull()?.uppercase() ?: "?", color = AdminPrimary, fontWeight = FontWeight.Bold)
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(user.displayName, color = AdminOnSurface, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    if (user.isAdmin) Surface(shape = RoundedCornerShape(4.dp), color = AdminYellow.copy(0.2f)) { Text("ADMIN", color = AdminYellow, fontSize = 8.sp, modifier = Modifier.padding(2.dp, 1.dp)) }
-                                    if (user.isBanned) Surface(shape = RoundedCornerShape(4.dp), color = AdminRed.copy(0.2f)) { Text("BAN", color = AdminRed, fontSize = 8.sp, modifier = Modifier.padding(2.dp, 1.dp)) }
-                                    if (user.dmBlocked) Surface(shape = RoundedCornerShape(4.dp), color = AdminYellow.copy(0.2f)) { Text("DM⛔", color = AdminYellow, fontSize = 8.sp, modifier = Modifier.padding(2.dp, 1.dp)) }
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(user.displayName, color = tc.on, fontWeight = FontWeight.SemiBold)
+                                    if (user.isAdmin) StatusChip("ADMIN", AdminYellow)
+                                    if (user.isBanned) StatusChip("BAN", AdminRed)
+                                    if (user.isFrozen) StatusChip("❄️", AdminBorder)
                                 }
-                                Text("@${user.username} • ID: ${user.id}", color = AdminOnSurfaceMuted, fontSize = 11.sp)
+                                Text("@${user.username} • ${user.id}", color = tc.muted, fontSize = 11.sp)
                             }
+                            Box(Modifier.size(8.dp).background(if (user.online) AdminGreen else Color.Gray, CircleShape))
                         }
                         Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SmallActionBtn(if (user.isAdmin) "−Admin" else "+Admin", AdminYellow) { onSetAdmin(user.id, !user.isAdmin) }
-                            if (user.isBanned) SmallActionBtn("Разбан", AdminGreen) { onUnban(user.id) }
-                            else SmallActionBtn("Бан", AdminRed) { showBanDialog = user.id }
-                            if (user.dmBlocked) SmallActionBtn("DM ✓", AdminGreen) { onUnblockDm(user.id) }
-                            else SmallActionBtn("DM ⛔", AdminYellow) { onBlockDm(user.id, 0L) }
-                            SmallActionBtn("Удалить", AdminRed.copy(0.7f)) { confirmDelete = user.id }
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                            ABtn("✏️ Изменить", AdminPrimary) { editUser = user }
+                            if (user.isBanned) ABtn("✅ Разбан", AdminGreen) { onUnban(user.id) }
+                            else ABtn("🚫 Бан", AdminRed) { banTarget = user.id }
+                            if (user.isFrozen) ABtn("🔥 Разморозить", AdminGreen) { onUnfreeze(user.id) }
+                            else ABtn("❄️ Заморозить", AdminBorder) { onFreeze(user.id) }
+                            ABtn("🗑️", AdminRed) { onDelete(user.id) }
                         }
                     }
                 }
@@ -204,83 +157,103 @@ fun UsersTab(users: List<UserEntity>, onDelete: (String) -> Unit, onSetAdmin: (S
         }
     }
 
-    if (confirmDelete != null) {
-        AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text("Удалить?", color = AdminOnSurface) },
-            text = { Text("Нельзя отменить", color = AdminOnSurfaceMuted) },
-            confirmButton = { TextButton(onClick = { onDelete(confirmDelete!!); confirmDelete = null }) { Text("Удалить", color = AdminRed, fontWeight = FontWeight.Bold) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Отмена", color = AdminOnSurfaceMuted) } },
-            containerColor = AdminSurface)
+    editUser?.let { user ->
+        EditUserDialog(user = user, onSave = { updates -> onUpdate(user.id, updates); editUser = null }, onDismiss = { editUser = null })
     }
-    if (showBanDialog != null) {
-        BanDialog(onBan = { mins, reason -> onBan(showBanDialog!!, mins, reason); showBanDialog = null }, onDismiss = { showBanDialog = null })
+    banTarget?.let { uid ->
+        BanDialog(onBan = { reason -> onBan(uid, reason); banTarget = null }, onDismiss = { banTarget = null })
     }
 }
 
 @Composable
-fun SmallActionBtn(label: String, color: Color, onClick: () -> Unit) {
-    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(32.dp),
-        colors = ButtonDefaults.textButtonColors(contentColor = color)) {
-        Text(label, color = color, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-fun BanDialog(onBan: (Long, String) -> Unit, onDismiss: () -> Unit) {
-    var reason by remember { mutableStateOf("") }
-    var duration by remember { mutableStateOf("0") }
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = AdminBorder, focusedTextColor = AdminOnSurface, unfocusedTextColor = AdminOnSurface)
-    AlertDialog(onDismissRequest = onDismiss,
-        title = { Text("Бан пользователя", color = AdminOnSurface) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = reason, onValueChange = { reason = it }, label = { Text("Причина") }, colors = fieldColors, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
-                OutlinedTextField(value = duration, onValueChange = { duration = it }, label = { Text("Минуты (0 = навсегда)") }, colors = fieldColors, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), singleLine = true)
+private fun ChatsTab(chats: List<ChatModel>, onOpen: (String) -> Unit, onDeleteMsg: (String, String) -> Unit) {
+    val tc = LocalAdminTC.current
+    LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { Text("${chats.size} чатов", color = tc.muted, fontSize = 12.sp) }
+        items(chats, key = { it.id }) { chat ->
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = tc.surf), modifier = Modifier.fillMaxWidth().clickable { onOpen(chat.id) }) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (chat.isBot) Icons.Default.SmartToy else if (chat.isGroup) Icons.Default.Group else Icons.Default.Person, null,
+                        tint = if (chat.isBot) AdminYellow else AdminPrimary, modifier = Modifier.size(26.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(chat.name, color = tc.on, fontWeight = FontWeight.SemiBold)
+                        Text("${chat.members.size} участников • ${chat.id.take(8)}...", color = tc.muted, fontSize = 11.sp)
+                        if (chat.lastMessage.isNotEmpty()) Text(chat.lastMessage.take(50), color = tc.muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Default.ChevronRight, null, tint = tc.muted)
+                }
             }
-        },
-        confirmButton = { TextButton(onClick = { onBan(duration.toLongOrNull() ?: 0L, reason) }) { Text("Заблокировать", color = AdminRed, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = AdminOnSurfaceMuted) } },
-        containerColor = AdminSurface)
+        }
+    }
 }
 
 @Composable
-fun BotTab(users: List<UserEntity>, onSendBot: (String, String) -> Unit) {
+private fun LogsTab(logs: List<LogModel>) {
+    val tc = LocalAdminTC.current
+    val state = rememberLazyListState()
+    val sdf = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    Column(Modifier.fillMaxSize()) {
+        Text("${logs.size} записей", color = tc.muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp))
+        LazyColumn(state = state, modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            items(logs) { log ->
+                val color = when (log.action) {
+                    "BAN", "DELETE_MSG", "DELETE_USER" -> AdminRed
+                    "UNBAN", "UNFREEZE" -> AdminGreen
+                    "FREEZE" -> AdminBorder
+                    "LOGIN" -> AdminPrimary
+                    else -> tc.on
+                }
+                val ts = log.timestamp?.toDate()?.let { sdf.format(it) } ?: "?"
+                Text(
+                    "[$ts][${log.action}] uid=${log.userId.take(6)} target=${log.targetId.take(6)} ${log.details.take(40)}",
+                    color = color, fontSize = 10.sp,
+                    modifier = Modifier.fillMaxWidth().background(tc.card.copy(0.5f), RoundedCornerShape(3.dp)).padding(6.dp, 3.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BotTab(users: List<UserModel>, onToUser: (String, String) -> Unit, onBroadcast: (String) -> Unit) {
+    val tc = LocalAdminTC.current
     var text by remember { mutableStateOf("") }
-    var targetAll by remember { mutableStateOf(true) }
-    var selectedUser by remember { mutableStateOf("") }
-    val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = AdminBorder, focusedTextColor = AdminOnSurface, unfocusedTextColor = AdminOnSurface)
+    var toAll by remember { mutableStateOf(true) }
+    var selectedUid by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) }
+    val fc = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on)
 
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = AdminSurface), modifier = Modifier.fillMaxWidth()) {
+        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = tc.surf)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row { Text("🤖", fontSize = 22.sp); Spacer(Modifier.width(8.dp)); Text("VerySchool BOT", color = tc.on, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🤖", fontSize = 24.sp); Spacer(Modifier.width(8.dp))
-                    Text("VerySchool BOT", color = AdminOnSurface, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-                Text("Отправить сообщение от имени бота", color = AdminOnSurfaceMuted, fontSize = 12.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(checked = targetAll, onCheckedChange = { targetAll = it }, colors = SwitchDefaults.colors(checkedThumbColor = AdminPrimary, checkedTrackColor = AdminPrimary.copy(0.3f)))
+                    Switch(checked = toAll, onCheckedChange = { toAll = it }, colors = SwitchDefaults.colors(checkedTrackColor = AdminPrimary))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (targetAll) "Всем пользователям" else "Конкретному пользователю", color = AdminOnSurface)
+                    Text(if (toAll) "Всем пользователям" else "Конкретному пользователю", color = tc.on)
                 }
-                if (!targetAll) {
-                    var expanded by remember { mutableStateOf(false) }
+                if (!toAll) {
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
-                        OutlinedTextField(
-                            value = users.firstOrNull { it.id == selectedUser }?.let { "@${it.username}" } ?: "Выбери пользователя",
+                        OutlinedTextField(value = users.firstOrNull { it.id == selectedUid }?.let { "@${it.username}" } ?: "Выберите пользователя",
                             onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth().menuAnchor(),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                            colors = fieldColors, shape = RoundedCornerShape(12.dp))
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) }, colors = fc, shape = RoundedCornerShape(12.dp))
                         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             users.forEach { user ->
-                                DropdownMenuItem(text = { Text("@${user.username} (${user.displayName})", color = AdminOnSurface) }, onClick = { selectedUser = user.id; expanded = false })
+                                DropdownMenuItem(text = { Text("@${user.username} (${user.displayName})", color = tc.on) }, onClick = { selectedUid = user.id; expanded = false })
                             }
                         }
                     }
                 }
-                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("Сообщение") }, colors = fieldColors, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 4)
-                Button(onClick = { if (text.isNotBlank()) { onSendBot(text.trim(), if (targetAll) "" else selectedUser); text = "" } },
-                    modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = AdminPrimary)) {
-                    Icon(Icons.Default.Send, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Отправить от BOT")
+                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("Сообщение") }, colors = fc, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), maxLines = 4)
+                Button(onClick = {
+                    if (text.isNotBlank()) {
+                        if (toAll) onBroadcast(text.trim()) else if (selectedUid.isNotEmpty()) onToUser(selectedUid, text.trim())
+                        text = ""
+                    }
+                }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = AdminPrimary)) {
+                    Icon(Icons.Default.Send, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Отправить")
                 }
             }
         }
@@ -288,31 +261,69 @@ fun BotTab(users: List<UserEntity>, onSendBot: (String, String) -> Unit) {
 }
 
 @Composable
-fun ChatsTab(chats: List<ChatEntity>, onDelete: (String) -> Unit) {
-    var confirmDelete by remember { mutableStateOf<String?>(null) }
-    LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Text("${chats.size} чатов", color = AdminOnSurfaceMuted, fontSize = 12.sp) }
-        items(chats, key = { it.id }) { chat ->
-            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = AdminSurface), modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (chat.isBot) Icons.Default.SmartToy else if (chat.isGroup) Icons.Default.Group else Icons.Default.Person, null,
-                        tint = if (chat.isBot) AdminYellow else if (chat.isGroup) AdminPrimary else AdminSecondary, modifier = Modifier.size(26.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(chat.name, color = AdminOnSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        Text("${if (chat.isBot) "BOT" else if (chat.isGroup) "Группа" else "Личный"} • ${chat.id.take(8)}...", color = AdminOnSurfaceMuted, fontSize = 10.sp)
-                    }
-                    IconButton(onClick = { confirmDelete = chat.id }) { Icon(Icons.Default.Delete, null, tint = AdminRed.copy(0.7f), modifier = Modifier.size(18.dp)) }
+private fun PassphrasesTab(passphrases: List<String>, onSave: (List<String>) -> Unit) {
+    val tc = LocalAdminTC.current
+    val list = remember(passphrases) { passphrases.toMutableStateList() }
+    var newPhrase by remember { mutableStateOf("") }
+    val fc = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on)
+
+    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Управление ключевыми фразами входа", color = tc.on, fontWeight = FontWeight.Bold)
+        Text("Новые пользователи вводят одну из этих фраз при регистрации.", color = tc.muted, fontSize = 12.sp)
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(list) { phrase ->
+                Row(Modifier.fillMaxWidth().background(tc.card, RoundedCornerShape(10.dp)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(phrase, color = AdminPrimary, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { list.remove(phrase) }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.Delete, null, tint = AdminRed, modifier = Modifier.size(18.dp)) }
                 }
             }
         }
-        item { Spacer(Modifier.height(80.dp)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = newPhrase, onValueChange = { newPhrase = it }, placeholder = { Text("Новая фраза...", color = tc.muted) }, colors = fc, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(10.dp))
+            Button(onClick = { if (newPhrase.isNotBlank()) { list.add(newPhrase.trim()); newPhrase = "" } }, colors = ButtonDefaults.buttonColors(containerColor = AdminPrimary), shape = RoundedCornerShape(10.dp)) { Text("Добавить") }
+        }
+        Button(onClick = { onSave(list.toList()) }, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = AdminGreen)) {
+            Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Сохранить фразы", fontWeight = FontWeight.Bold)
+        }
     }
-    if (confirmDelete != null) {
-        AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text("Удалить чат?", color = AdminOnSurface) },
-            text = { Text("Все сообщения удалятся", color = AdminOnSurfaceMuted) },
-            confirmButton = { TextButton(onClick = { onDelete(confirmDelete!!); confirmDelete = null }) { Text("Удалить", color = AdminRed, fontWeight = FontWeight.Bold) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Отмена", color = AdminOnSurfaceMuted) } },
-            containerColor = AdminSurface)
-    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+@Composable private fun StatusChip(text: String, color: Color) {
+    Surface(shape = RoundedCornerShape(4.dp), color = color.copy(0.2f)) { Text(text, color = color, fontSize = 8.sp, modifier = Modifier.padding(3.dp, 1.dp)) }
+}
+@Composable private fun ABtn(label: String, color: Color, onClick: () -> Unit) {
+    TextButton(onClick = onClick, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp), modifier = Modifier.height(30.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = color)) { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Medium) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun EditUserDialog(user: UserModel, onSave: (Map<String, Any>) -> Unit, onDismiss: () -> Unit) {
+    val tc = LocalAdminTC.current
+    var dn by remember(user) { mutableStateOf(user.displayName) }
+    var uname by remember(user) { mutableStateOf(user.username) }
+    val fc = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on)
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Редактировать @${user.username}", color = tc.on) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = dn, onValueChange = { dn = it }, label = { Text("Отображаемое имя") }, colors = fc, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                OutlinedTextField(value = uname, onValueChange = { uname = it }, label = { Text("Юзернейм") }, colors = fc, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(mapOf("displayName" to dn.trim(), "username" to uname.trim().lowercase())) }) { Text("Сохранить", color = AdminPrimary, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = tc.muted) } },
+        containerColor = tc.surf)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun BanDialog(onBan: (String) -> Unit, onDismiss: () -> Unit) {
+    val tc = LocalAdminTC.current
+    var reason by remember { mutableStateOf("") }
+    val fc = OutlinedTextFieldDefaults.colors(focusedBorderColor = AdminPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on)
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Заблокировать?", color = tc.on) },
+        text = { OutlinedTextField(value = reason, onValueChange = { reason = it }, label = { Text("Причина") }, colors = fc, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) },
+        confirmButton = { TextButton(onClick = { onBan(reason) }) { Text("Заблокировать", color = AdminRed, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена", color = tc.muted) } },
+        containerColor = tc.surf)
 }

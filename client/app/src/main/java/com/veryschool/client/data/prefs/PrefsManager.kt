@@ -2,48 +2,53 @@ package com.veryschool.client.data.prefs
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "veryschool_prefs")
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vs_prefs_v2")
 
-object PrefKeys {
-    val SERVER_URL = stringPreferencesKey("server_url")
-    val AUTH_TOKEN = stringPreferencesKey("auth_token")
-    val USER_ID = stringPreferencesKey("user_id")
-    val USERNAME = stringPreferencesKey("username")
-    val DISPLAY_NAME = stringPreferencesKey("display_name")
-    val AVATAR_BASE64 = stringPreferencesKey("avatar_base64")
+enum class AppTheme { DARK, LIGHT, SYSTEM }
+
+object PK {
+    val USER_ID       = stringPreferencesKey("user_id")
+    val USERNAME      = stringPreferencesKey("username")
+    val DISPLAY_NAME  = stringPreferencesKey("display_name")
+    val AVATAR_URL    = stringPreferencesKey("avatar_url")
+    val IS_ADMIN      = booleanPreferencesKey("is_admin")
+    val THEME         = stringPreferencesKey("theme")
+    val NOTIF_MSG     = booleanPreferencesKey("notif_msg")
+    val NOTIF_SYS     = booleanPreferencesKey("notif_sys")
+    val NOTIF_ERR     = booleanPreferencesKey("notif_err")
+    val NOTIF_SOUND   = booleanPreferencesKey("notif_sound")
+    val NOTIF_VIB     = booleanPreferencesKey("notif_vib")
 }
 
 class PrefsManager(private val context: Context) {
+    private val ds = context.dataStore
 
-    val serverUrl: Flow<String> = context.dataStore.data.map { it[PrefKeys.SERVER_URL] ?: "" }
-    val authToken: Flow<String> = context.dataStore.data.map { it[PrefKeys.AUTH_TOKEN] ?: "" }
-    val userId: Flow<String> = context.dataStore.data.map { it[PrefKeys.USER_ID] ?: "" }
-    val username: Flow<String> = context.dataStore.data.map { it[PrefKeys.USERNAME] ?: "" }
-    val displayName: Flow<String> = context.dataStore.data.map { it[PrefKeys.DISPLAY_NAME] ?: "" }
-    val avatarBase64: Flow<String> = context.dataStore.data.map { it[PrefKeys.AVATAR_BASE64] ?: "" }
+    val userId:      Flow<String>   = ds.data.map { it[PK.USER_ID]      ?: "" }
+    val username:    Flow<String>   = ds.data.map { it[PK.USERNAME]     ?: "" }
+    val displayName: Flow<String>   = ds.data.map { it[PK.DISPLAY_NAME] ?: "" }
+    val avatarUrl:   Flow<String>   = ds.data.map { it[PK.AVATAR_URL]   ?: "" }
+    val isAdmin:     Flow<Boolean>  = ds.data.map { it[PK.IS_ADMIN]     ?: false }
+    val theme:       Flow<AppTheme> = ds.data.map { runCatching { AppTheme.valueOf(it[PK.THEME] ?: "DARK") }.getOrDefault(AppTheme.DARK) }
+    val notifMsg:    Flow<Boolean>  = ds.data.map { it[PK.NOTIF_MSG]    ?: true }
+    val notifSys:    Flow<Boolean>  = ds.data.map { it[PK.NOTIF_SYS]    ?: true }
+    val notifErr:    Flow<Boolean>  = ds.data.map { it[PK.NOTIF_ERR]    ?: true }
+    val notifSound:  Flow<Boolean>  = ds.data.map { it[PK.NOTIF_SOUND]  ?: true }
+    val notifVib:    Flow<Boolean>  = ds.data.map { it[PK.NOTIF_VIB]    ?: true }
 
-    suspend fun saveServerUrl(url: String) = context.dataStore.edit { it[PrefKeys.SERVER_URL] = url }
-    suspend fun saveAuth(token: String, userId: String, username: String, displayName: String) {
-        context.dataStore.edit {
-            it[PrefKeys.AUTH_TOKEN] = token
-            it[PrefKeys.USER_ID] = userId
-            it[PrefKeys.USERNAME] = username
-            it[PrefKeys.DISPLAY_NAME] = displayName
-        }
+    suspend fun saveUser(uid: String, uname: String, dn: String, url: String, admin: Boolean) = ds.edit {
+        it[PK.USER_ID] = uid; it[PK.USERNAME] = uname; it[PK.DISPLAY_NAME] = dn
+        it[PK.AVATAR_URL] = url; it[PK.IS_ADMIN] = admin
     }
-    suspend fun saveAvatar(base64: String) = context.dataStore.edit { it[PrefKeys.AVATAR_BASE64] = base64 }
-    suspend fun clearAuth() = context.dataStore.edit {
-        it.remove(PrefKeys.AUTH_TOKEN)
-        it.remove(PrefKeys.USER_ID)
-        it.remove(PrefKeys.USERNAME)
-        it.remove(PrefKeys.DISPLAY_NAME)
-        it.remove(PrefKeys.AVATAR_BASE64)
-    }
+    suspend fun saveTheme(v: AppTheme)      = ds.edit { it[PK.THEME]       = v.name }
+    suspend fun saveNotifMsg(v: Boolean)    = ds.edit { it[PK.NOTIF_MSG]   = v }
+    suspend fun saveNotifSys(v: Boolean)    = ds.edit { it[PK.NOTIF_SYS]   = v }
+    suspend fun saveNotifErr(v: Boolean)    = ds.edit { it[PK.NOTIF_ERR]   = v }
+    suspend fun saveNotifSound(v: Boolean)  = ds.edit { it[PK.NOTIF_SOUND] = v }
+    suspend fun saveNotifVib(v: Boolean)    = ds.edit { it[PK.NOTIF_VIB]   = v }
+    suspend fun clear() = ds.edit { it.clear() }
 }

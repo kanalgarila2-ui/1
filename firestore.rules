@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function isAuth() { return request.auth != null; }
+    function isOwner(uid) { return request.auth.uid == uid; }
+    function isAdmin() {
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    function isBanned() {
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBanned == true;
+    }
+    function isFrozen() {
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isFrozen == true;
+    }
+    function isChatMember(chatId) {
+      return isAuth() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && !isBanned()
+        && !('isAdmin' in request.resource.data.diff(resource.data).affectedKeys())
+        && !('isBanned' in request.resource.data.diff(resource.data).affectedKeys())
+        && !('isFrozen' in request.resource.data.diff(resource.data).affectedKeys());
+      allow update: if isAdmin(); // Admins can update anything
+      allow delete: if isAdmin();
+    }
+
+    // ── Chats ─────────────────────────────────────────────────────────────────
+    match /chats/{chatId} {
+      allow read: if isAuth() && request.auth.uid in resource.data.members;
+      allow create: if isAuth() && !isBanned() && request.auth.uid in request.resource.data.members;
+      allow update: if isAuth() && request.auth.uid in resource.data.members && !isBanned();
+      allow delete: if isAdmin();
+    }
+
+    // ── Messages ──────────────────────────────────────────────────────────────
+    match /messages/{chatId}/msgs/{messageId} {
+      allow read: if isChatMember(chatId);
+      allow create: if isChatMember(chatId) && !isBanned() && !isFrozen()
+        && request.resource.data.senderId == request.auth.uid;
+      // Own messages: soft-delete only
+      allow update: if (isOwner(resource.data.senderId) && !isBanned())
+        || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Deleted messages ──────────────────────────────────────────────────────
+    match /deleted_messages/{messageId} {
+      allow read: if isAuth();
+      allow write: if isAdmin() || (isAuth() && !isBanned());
+    }
+
+    // ── Logs ─────────────────────────────────────────────────────────────────
+    match /logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    // ── Passphrases ───────────────────────────────────────────────────────────
+    match /passphrases/{docId} {
+      allow read: if isAuth() || true; // Нужен при регистрации до авторизации
+      allow write: if isAdmin();
+    }
+  }
+}
