@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:495429427367:android:d9b8bb7846b0f5a89ebb82",
         "android_client_info": {
-          "package_name": "com.veryschool.client"
+          "package_name": "com.veryschool.client.debug"
         }
       },
       "oauth_client": [],
