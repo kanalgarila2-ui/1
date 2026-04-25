@@ -1,19 +1,27 @@
 {
   "project_info": {
-    "project_number": "YOUR_PROJECT_NUMBER",
-    "project_id": "YOUR_PROJECT_ID",
-    "storage_bucket": "YOUR_PROJECT_ID.appspot.com"
+    "project_number": "495429427367",
+    "project_id": "veryschool",
+    "storage_bucket": "veryschool.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:YOUR_PROJECT_NUMBER:android:YOUR_APP_HASH",
-        "android_client_info": { "package_name": "com.veryschool.client" }
+        "mobilesdk_app_id": "1:495429427367:android:d9b8bb7846b0f5a89ebb82",
+        "android_client_info": {
+          "package_name": "com.veryschool.client"
+        }
       },
       "oauth_client": [],
-      "api_key": [{ "current_key": "YOUR_API_KEY" }],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2vfwyg7Eqy0_bo4y9USIPACx8S8qEauE"
+        }
+      ],
       "services": {
-        "appinvite_service": { "other_platform_oauth_client": [] }
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
       }
     }
   ],
