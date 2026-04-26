@@ -58,7 +58,7 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > client/app/keystore.jks
           fi
-
+          
       - name: Build Client APK (debug)
         run: gradle -p client clean assembleDebug --no-daemon --stacktrace
         env:
