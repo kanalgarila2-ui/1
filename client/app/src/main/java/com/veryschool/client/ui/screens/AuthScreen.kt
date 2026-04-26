@@ -2,6 +2,8 @@ package com.veryschool.client.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -61,11 +62,14 @@ fun AuthScreen(
                         listOf("Войти" to true, "Регистрация" to false).forEach { (label, isL) ->
                             Box(
                                 Modifier.weight(1f).background(if (isLogin == isL) VSPrimary else Color.Transparent, RoundedCornerShape(10.dp))
-                                    .padding(vertical = 10.dp),
+                                    .padding(vertical = 10.dp)
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() }
+                                    ) { isLogin = isL },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(label, color = if (isLogin == isL) Color.White else tc.muted, fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.then(androidx.compose.ui.Modifier.clickable(indication=null, interactionSource=remember{androidx.compose.foundation.interaction.MutableInteractionSource()}){ isLogin = isL }))
+                                Text(label, color = if (isLogin == isL) Color.White else tc.muted, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -111,10 +115,3 @@ fun AuthScreen(
         }
     }
 }
-
-// Нужен clickable без ripple — добавляем расширение
-private fun androidx.compose.ui.Modifier.clickable(
-    indication: androidx.compose.foundation.Indication?,
-    interactionSource: androidx.compose.foundation.interaction.MutableInteractionSource,
-    onClick: () -> Unit
-) = this.then(androidx.compose.foundation.clickable(interactionSource = interactionSource, indication = indication, onClick = onClick))
