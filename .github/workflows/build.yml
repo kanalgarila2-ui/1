@@ -79,34 +79,18 @@ jobs:
       - name: Build Server APK (debug)
         run: gradle -p server clean assembleDebug --no-daemon --stacktrace
 
-      # - name: Upload Client APK
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: VerySchool-Client-APK
-      #     path: |
-      #       client/app/build/outputs/apk/debug/app-debug.apk
-      #       client/app/build/outputs/bundle/release/app-release.aab
-      #     if-no-files-found: warn
+      - name: Upload Client APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VerySchool-Client-APK
+          path: |
+            client/app/build/outputs/apk/debug/app-debug.apk
+            client/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: warn
 
-      # - name: Upload Server APK
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: VerySchool-Server-APK
-      #     path: server/app/build/outputs/apk/debug/app-debug.apk
-      #     if-no-files-found: warn
-
-
-      - name: Upload Client APK to transfer.sh
-        run: |
-          curl --upload-file client/app/build/outputs/apk/debug/app-debug.apk https://transfer.sh/app-debug.apk
-          echo "CLIENT_URL=$(curl --upload-file client/app/build/outputs/apk/debug/app-debug.apk https://transfer.sh/app-debug.apk)" >> $GITHUB_ENV
-
-      - name: Upload Server APK to transfer.sh
-        run: |
-          curl --upload-file server/app/build/outputs/apk/debug/app-debug.apk https://transfer.sh/app-debug.apk
-          echo "SERVER_URL=$(curl --upload-file server/app/build/outputs/apk/debug/app-debug.apk https://transfer.sh/app-debug.apk)" >> $GITHUB_ENV
-
-      - name: Show download links
-        run: |
-          echo "Client APK: $CLIENT_URL"
-          echo "Server APK: $SERVER_URL"
+      - name: Upload Server APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VerySchool-Server-APK
+          path: server/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
