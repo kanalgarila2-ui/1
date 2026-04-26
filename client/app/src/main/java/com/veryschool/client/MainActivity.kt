@@ -115,9 +115,13 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable(Nav.PROFILE) {
+                        val me = users.firstOrNull { it.id == currentUid }
                         ProfileScreen(
-                            userId = currentUid, username = "", displayName = displayName,
-                            avatarUrl = avatarUrl, isAdmin = isAdmin,
+                            userId = currentUid,
+                            username = me?.username ?: "",
+                            displayName = me?.displayName ?: displayName,
+                            avatarUrl = me?.avatarUrl ?: avatarUrl,
+                            isAdmin = isAdmin,
                             onBack     = { nav.popBackStack() },
                             onSave     = { dn, uri -> vm.updateProfile(dn, uri, this@MainActivity) },
                             onLogout   = { vm.logout() },

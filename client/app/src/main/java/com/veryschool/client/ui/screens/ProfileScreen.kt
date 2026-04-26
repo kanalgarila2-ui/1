@@ -99,6 +99,8 @@ fun ProfileScreen(
 @Composable
 fun UserProfileScreen(user: com.veryschool.client.data.models.UserModel, isAdmin: Boolean, onBack: () -> Unit, onSendMessage: () -> Unit, onBan: () -> Unit, onFreeze: () -> Unit) {
     val tc = LocalTC.current
+    Text("DEBUG: username='$username', displayName='$displayName'", 
+     color = Color.Red, fontSize = 14.sp)
     Scaffold(containerColor = tc.bg, topBar = {
         TopAppBar(navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null, tint = tc.on) } },
             title = { Text("Профиль", color = tc.on, fontWeight = FontWeight.SemiBold) },
