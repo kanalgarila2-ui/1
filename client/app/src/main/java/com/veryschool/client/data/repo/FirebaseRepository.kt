@@ -47,49 +47,144 @@ class FirebaseRepository {
         displayName: String,
         passphrase: String
     ): AuthResult {
+        Log.d(TAG, "═══════ REGISTER START ═══════")
+        Log.d(TAG, "email=$email, username=$username, displayName=$displayName")
         return try {
             // 1. Проверяем фразу входа
+            Log.d(TAG, "Step 1: Loading valid passphrases...")
             val validPhrases = getValidPassphrases()
+            Log.d(TAG, "Valid passphrases count: ${validPhrases.size}")
             if (passphrase !in validPhrases) {
+                Log.w(TAG, "Passphrase not in list")
                 return AuthResult(false, error = "Неверная ключевая фраза")
             }
+            Log.d(TAG, "Passphrase OK")
+
             // 2. Проверяем уникальность username
-            val existing = db.collection(Col.USERS)
-                .whereEqualTo("username", username.lowercase().trim())
-                .get().await()
-            if (!existing.isEmpty) return AuthResult(false, error = "Имя пользователя уже занято")
+            Log.d(TAG, "Step 2: Checking username uniqueness for '$username'...")
+            try {
+                val existing = db.collection(Col.USERS)
+                    .whereEqualTo("username", username.lowercase().trim())
+                    .get().await()
+                Log.d(TAG, "Username query returned ${existing.size()} documents")
+                if (!existing.isEmpty) {
+                    Log.w(TAG, "Username already taken")
+                    return AuthResult(false, error = "Имя пользователя уже занято")
+                }
+                Log.d(TAG, "Username is available")
+            } catch (checkEx: Exception) {
+                Log.e(TAG, "Username check FAILED: ${checkEx.message}", checkEx)
+                return AuthResult(false, error = "Ошибка проверки имени: ${checkEx.message}")
+            }
 
             // 3. Регистрируем в Firebase Auth
+            Log.d(TAG, "Step 3: Creating Firebase Auth user...")
             val result = auth.createUserWithEmailAndPassword(email, password).await()
-            val uid = result.user?.uid ?: return AuthResult(false, error = "Ошибка создания аккаунта")
+            val uid = result.user?.uid
+            if (uid == null) {
+                Log.e(TAG, "Auth returned null uid")
+                return AuthResult(false, error = "Ошибка создания аккаунта")
+            }
+            Log.d(TAG, "Auth user created: uid=$uid")
 
-            // 4. Создаём профиль в Firestore
-            val userId = (100000..999999).random().toString().padStart(6, '0')
-            val user = UserModel(
-                id = uid,
-                username = username.lowercase().trim(),
-                displayName = displayName.trim(),
-                passphrase = passphrase
-            )
-            db.collection(Col.USERS).document(uid).set(user).await()
+            // 4. Обновление токена
+            Log.d(TAG, "Step 4: Refreshing token...")
+            try {
+                val tokenResult = result.user?.getIdToken(true)?.await()
+                Log.d(TAG, "Token refreshed, new token length: ${tokenResult?.token?.length ?: 0}")
+            } catch (tokenEx: Exception) {
+                Log.w(TAG, "Token refresh failed (non‑fatal): ${tokenEx.message}")
+            }
 
-            // 5. Создаём BOT чат
-            createBotChat(uid, displayName.trim())
+            // 5. Запись профиля в Firestore
+            Log.d(TAG, "Step 5: Writing user document to Firestore...")
+            var firestoreDone = false
+            var retries = 5
+            var lastWriteError: Exception? = null
+            while (!firestoreDone && retries > 0) {
+                try {
+                    Log.d(TAG, "Firestore set attempt #${6 - retries}")
+                    val user = UserModel(
+                        id = uid,
+                        username = username.lowercase().trim(),
+                        displayName = displayName.trim(),
+                        passphrase = passphrase
+                    )
+                    db.collection(Col.USERS).document(uid).set(user).await()
+                    firestoreDone = true
+                    Log.d(TAG, "Firestore document created successfully for $uid")
+                } catch (writeError: Exception) {
+                    lastWriteError = writeError
+                    retries--
+                    Log.e(TAG, "Firestore write error (retries left: $retries): ${writeError.message}", writeError)
+                    if (retries > 0) {
+                        Log.d(TAG, "Waiting 1s before retry...")
+                        delay(1000)
+                        try { auth.currentUser?.getIdToken(true)?.await() } catch (_: Exception) {}
+                    }
+                }
+            }
+            if (!firestoreDone) {
+                Log.e(TAG, "Firestore write FAILED after 5 retries. Last error: ${lastWriteError?.message}", lastWriteError)
+                try { result.user?.delete()?.await(); Log.d(TAG, "Deleted auth user due to Firestore failure") } catch (_: Exception) {}
+                return AuthResult(false, error = "Не удалось создать профиль. Попробуйте ещё раз.")
+            }
 
-            // 6. FCM token
-            updateFcmToken(uid)
+            // 6. Создаём BOT чат
+            Log.d(TAG, "Step 6: Creating bot chat...")
+            try {
+                createBotChat(uid, displayName.trim())
+                Log.d(TAG, "Bot chat created")
+            } catch (botEx: Exception) {
+                Log.w(TAG, "Bot chat creation failed (non‑fatal): ${botEx.message}")
+            }
 
-            // 7. Лог
-            writeLog(uid, "REGISTER", "", "Registered: @${username}")
+            // 7. FCM token
+            Log.d(TAG, "Step 7: Updating FCM token...")
+            try {
+                updateFcmToken(uid)
+                Log.d(TAG, "FCM token updated")
+            } catch (fcmEx: Exception) {
+                Log.w(TAG, "FCM token update failed (non‑fatal): ${fcmEx.message}")
+            }
 
-            Log.i(TAG, "Registered: $uid @$username")
-            AuthResult(true, user.copy(id = uid))
+            // 8. Лог
+            Log.d(TAG, "Step 8: Writing log entry...")
+            try {
+                writeLog(uid, "REGISTER", "", "Registered: @${username}")
+                Log.d(TAG, "Log entry written")
+            } catch (logEx: Exception) {
+                Log.w(TAG, "Log write failed (non‑fatal): ${logEx.message}")
+            }
+
+            // 9. Читаем профиль обратно
+            Log.d(TAG, "Step 9: Reading back user document...")
+            val userDoc = try {
+                db.collection(Col.USERS).document(uid).get().await()
+            } catch (readEx: Exception) {
+                Log.e(TAG, "Read after create failed: ${readEx.message}", readEx)
+                null
+            }
+            if (userDoc == null || !userDoc.exists()) {
+                Log.e(TAG, "User document not found after creation")
+                return AuthResult(false, error = "Профиль не найден после создания")
+            }
+            val finalUser = userDoc.toObject<UserModel>()
+            if (finalUser == null) {
+                Log.e(TAG, "User document deserialization failed")
+                return AuthResult(false, error = "Ошибка чтения профиля")
+            }
+
+            Log.i(TAG, "═══════ REGISTER SUCCESS: $uid @${finalUser.username} ═══════")
+            AuthResult(true, finalUser.copy(id = uid))
         } catch (e: Exception) {
-            Log.e(TAG, "Register error: ${e.message}")
+            Log.e(TAG, "═══════ REGISTER UNEXPECTED ERROR ═══════", e)
+            Log.e(TAG, "Exception message: ${e.message}")
+            Log.e(TAG, "Exception class: ${e.javaClass.name}")
             AuthResult(false, error = mapAuthError(e.message ?: ""))
         }
     }
-
+    
     suspend fun login(email: String, password: String, passphrase: String): AuthResult {
         return try {
             val validPhrases = getValidPassphrases()
@@ -335,7 +430,7 @@ class FirebaseRepository {
             .update("readBy", FieldValue.arrayUnion(userId)).await()
     }
 
-    suspend fun deleteMessage(chatId: String, messageId: String, deletedBy: String) {
+    suspend fun deleteMessage( chatId: String, messageId: String, deletedBy: String) {
         // Мягкое удаление в messages
         db.collection(Col.MESSAGES).document(chatId).collection("msgs").document(messageId)
             .update(mapOf("isDeleted" to true, "deletedBy" to deletedBy, "text" to "")).await()

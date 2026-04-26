@@ -23,8 +23,13 @@ class AdminRepository {
         return try {
             auth.signInWithEmailAndPassword(email, password).await()
             val uid = auth.currentUser?.uid ?: return Pair(false, "Нет UID")
-            val user = db.collection("users").document(uid).get().await().toObject<UserModel>()
-            if (user?.isAdmin != true) {
+            val doc = db.collection("users").document(uid).get().await()
+            if (!doc.exists()) {
+                auth.signOut()
+                return Pair(false, "Профиль не найден в Firestore")
+            }
+            val isAdmin = doc.getBoolean("isAdmin") ?: false
+            if (!isAdmin) {
                 auth.signOut()
                 Pair(false, "Нет прав администратора")
             } else Pair(true, "")

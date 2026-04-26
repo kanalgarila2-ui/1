@@ -9,20 +9,24 @@ import kotlinx.coroutines.flow.map
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "vs_prefs_v2")
 
-enum class AppTheme { DARK, LIGHT, SYSTEM }
+enum class AppTheme { 
+    DARK,
+    LIGHT,
+    SYSTEM
+}
 
 object PK {
-    val USER_ID       = stringPreferencesKey("user_id")
-    val USERNAME      = stringPreferencesKey("username")
-    val DISPLAY_NAME  = stringPreferencesKey("display_name")
-    val AVATAR_URL    = stringPreferencesKey("avatar_url")
-    val IS_ADMIN      = booleanPreferencesKey("is_admin")
-    val THEME         = stringPreferencesKey("theme")
-    val NOTIF_MSG     = booleanPreferencesKey("notif_msg")
-    val NOTIF_SYS     = booleanPreferencesKey("notif_sys")
-    val NOTIF_ERR     = booleanPreferencesKey("notif_err")
-    val NOTIF_SOUND   = booleanPreferencesKey("notif_sound")
-    val NOTIF_VIB     = booleanPreferencesKey("notif_vib")
+    val USER_ID = stringPreferencesKey("user_id")
+    val USERNAME = stringPreferencesKey("username")
+    val DISPLAY_NAME = stringPreferencesKey("display_name")
+    val AVATAR_URL = stringPreferencesKey("avatar_url")
+    val IS_ADMIN = booleanPreferencesKey("is_admin")
+    val THEME = stringPreferencesKey("theme")
+    val NOTIF_MSG = booleanPreferencesKey("notif_msg")
+    val NOTIF_SYS = booleanPreferencesKey("notif_sys")
+    val NOTIF_ERR = booleanPreferencesKey("notif_err")
+    val NOTIF_SOUND = booleanPreferencesKey("notif_sound")
+    val NOTIF_VIB = booleanPreferencesKey("notif_vib")
 }
 
 class PrefsManager(private val context: Context) {

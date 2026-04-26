@@ -1,0 +1,50 @@
+[
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-xxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-xhdpi_ic_launcher_round.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-xhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-xxhdpi_ic_launcher_round.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-xxhdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-hdpi_ic_launcher_round.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-hdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-mdpi_ic_launcher_round.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-mdpi/ic_launcher_round.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/drawable_deleted_avatar.png.flat",
+        "source": "com.veryschool.client.app-main-69:/drawable/deleted_avatar.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/drawable_frozen_overlay.png.flat",
+        "source": "com.veryschool.client.app-main-69:/drawable/frozen_overlay.png"
+    },
+    {
+        "merged": "com.veryschool.client.app-merged_res-67:/mipmap-xxxhdpi_ic_launcher_round.png.flat",
+        "source": "com.veryschool.client.app-main-69:/mipmap-xxxhdpi/ic_launcher_round.png"
+    }
+]
