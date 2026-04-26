@@ -9,7 +9,26 @@
       "client_info": {
         "mobilesdk_app_id": "1:495429427367:android:d9b8bb7846b0f5a89ebb82",
         "android_client_info": {
-          "package_name": "com.veryschool.client.debug"
+          "package_name": "com.veryschool.client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2vfwyg7Eqy0_bo4y9USIPACx8S8qEauE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:495429427367:android:a26e442208e0f8909ebb82",
+        "android_client_info": {
+          "package_name": "com.veryschool.server"
         }
       },
       "oauth_client": [],
