@@ -19,6 +19,7 @@ out/
 captures/
 .externalNativeBuild/
 .cxx/
+server/app/build/*
 
 # ===== IDE =====
 .idea/
