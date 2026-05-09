@@ -55,13 +55,30 @@ fun AuthScreen(
             Text("Защищённый мессенджер", fontSize = 13.sp, color = tc.muted)
             Spacer(Modifier.height(40.dp))
 
-            Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = tc.surf), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = tc.surf),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
                     // Tab
-                    Row(Modifier.fillMaxWidth().background(tc.card, RoundedCornerShape(12.dp)).padding(4.dp)) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(tc.card, RoundedCornerShape(12.dp))
+                            .padding(4.dp)
+                    ) {
                         listOf("Войти" to true, "Регистрация" to false).forEach { (label, isL) ->
                             Box(
-                                Modifier.weight(1f).background(if (isLogin == isL) VSPrimary else Color.Transparent, RoundedCornerShape(10.dp))
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(
+                                        if (isLogin == isL) VSPrimary else Color.Transparent,
+                                        RoundedCornerShape(10.dp)
+                                    )
                                     .padding(vertical = 10.dp)
                                     .clickable(
                                         indication = null,
@@ -69,46 +86,102 @@ fun AuthScreen(
                                     ) { isLogin = isL },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(label, color = if (isLogin == isL) Color.White else tc.muted, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = label,
+                                    color = if (isLogin == isL) Color.White else tc.muted,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
                     }
 
-                    OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") },
-                        colors = fc, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp),
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Email") },
+                        colors = fc,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        leadingIcon = { Icon(Icons.Default.Email, null, tint = tc.muted) })
+                        leadingIcon = { Icon(Icons.Default.Email, null, tint = tc.muted) }
+                    )
 
-                    OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Пароль") },
-                        colors = fc, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp),
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Пароль") },
+                        colors = fc,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
                         leadingIcon = { Icon(Icons.Default.Lock, null, tint = tc.muted) },
-                        trailingIcon = { IconButton(onClick = { showPass = !showPass }) { Icon(if (showPass) Icons.Default.VisibilityOff else Icons.Default.Visibility, null, tint = tc.muted) } })
+                        trailingIcon = {
+                            IconButton(onClick = { showPass = !showPass }) {
+                                Icon(
+                                    if (showPass) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    null,
+                                    tint = tc.muted
+                                )
+                            }
+                        }
+                    )
 
                     AnimatedVisibility(visible = !isLogin) {
                         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("Имя пользователя") },
-                                colors = fc, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp),
-                                leadingIcon = { Icon(Icons.Default.AlternateEmail, null, tint = tc.muted) })
-                            OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { Text("Отображаемое имя") },
-                                colors = fc, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp),
-                                leadingIcon = { Icon(Icons.Default.Person, null, tint = tc.muted) })
+                            OutlinedTextField(
+                                value = username,
+                                onValueChange = { username = it },
+                                label = { Text("Имя пользователя") },
+                                colors = fc,
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                leadingIcon = { Icon(Icons.Default.AlternateEmail, null, tint = tc.muted) }
+                            )
+                            OutlinedTextField(
+                                value = displayName,
+                                onValueChange = { displayName = it },
+                                label = { Text("Отображаемое имя") },
+                                colors = fc,
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                leadingIcon = { Icon(Icons.Default.Person, null, tint = tc.muted) }
+                            )
                         }
                     }
 
-                    OutlinedTextField(value = passphrase, onValueChange = { passphrase = it }, label = { Text("Ключевая фраза") },
-                        colors = fc, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp),
+                    OutlinedTextField(
+                        value = passphrase,
+                        onValueChange = { passphrase = it },
+                        label = { Text("Ключевая фраза") },
+                        colors = fc,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
                         leadingIcon = { Icon(Icons.Default.Key, null, tint = tc.muted) },
-                        visualTransformation = PasswordVisualTransformation())
+                        visualTransformation = PasswordVisualTransformation()
+                    )
 
                     Button(
                         onClick = {
                             if (isLogin) onLogin(email, password, passphrase)
                             else onRegister(email, password, username, displayName, passphrase)
                         },
-                        modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = VSPrimary)
-                    ) { Text(if (isLogin) "Войти" else "Создать аккаунт", fontWeight = FontWeight.Bold, fontSize = 16.sp) }
+                    ) {
+                        Text(
+                            if (isLogin) "Войти" else "Создать аккаунт",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(40.dp))

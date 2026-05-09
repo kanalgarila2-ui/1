@@ -94,39 +94,7 @@ def setup_android_sdk():
         if "sdkmanager.bat" in files:
             sdkmanager = os.path.join(root, "sdkmanager.bat")
             break
-    
-    if not sdkmanager:
-        print("  ❌ Android SDK не найден!")
-        print(f"  Запусти сначала install_adb.py")
-        raise Exception("Android SDK not found!")
-    
-    print(f"  sdkmanager: {sdkmanager}")
-    
-    # Принимаем лицензии на всякий случай
-    print("\n  Принимаю лицензии...")
-    subprocess.run(f'echo y | "{sdkmanager}" --sdk_root="{ANDROID_SDK_ROOT}" --licenses', shell=True, capture_output=True)
-    
-    # Устанавливаем платформы если нет
-    packages = [
-        ("platform-tools", "Platform Tools"),
-        ("platforms;android-34", "SDK Platform 34"),
-        ("build-tools;34.0.0", "Build Tools 34.0.0"),
-    ]
-    
-    for pkg, desc in packages:
-        print(f"  Устанавливаю {desc}...")
-        result = subprocess.run(
-            f'"{sdkmanager}" --sdk_root="{ANDROID_SDK_ROOT}" {pkg}',
-            shell=True, capture_output=True, text=True
-        )
-        if result.returncode == 0:
-            print(f"  ✅ {desc}")
-        else:
-            if "already installed" in result.stdout.lower() or "nothing to install" in result.stdout.lower():
-                print(f"  ✅ {desc} (уже установлен)")
-            else:
-                print(f"  ⚠️ {desc}: {result.stdout[-100:]}")
-    
+
     # Установка переменных
     os.environ["ANDROID_HOME"] = ANDROID_SDK_ROOT
     os.environ["ANDROID_SDK_ROOT"] = ANDROID_SDK_ROOT

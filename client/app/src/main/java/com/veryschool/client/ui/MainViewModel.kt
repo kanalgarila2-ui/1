@@ -5,43 +5,39 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.*
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.FirebaseAuth
 import com.veryschool.client.data.models.*
 import com.veryschool.client.data.prefs.*
 import com.veryschool.client.data.repo.FirebaseRepository
-import com.veryschool.client.notifications.NotificationHelper
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 sealed class AuthState { object Unknown : AuthState(); object NotAuth : AuthState(); object Auth : AuthState() }
-sealed class UiEvent  { data class Error(val msg: String) : UiEvent(); data class Success(val msg: String) : UiEvent(); data class NavigateToChat(val chatId: String) : UiEvent() }
+sealed class UiEvent { data class Error(val msg: String) : UiEvent(); data class Success(val msg: String) : UiEvent(); data class NavigateToChat(val chatId: String) : UiEvent() }
 
 class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
-
     private val repo = FirebaseRepository()
     private val TAG  = "MainVM"
 
-    // ── Auth state ────────────────────────────────────────────────────────────
     private val _authState = MutableStateFlow<AuthState>(AuthState.Unknown)
     val authState: StateFlow<AuthState> = _authState
 
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent: SharedFlow<UiEvent> = _uiEvent
 
-    // ── User info ─────────────────────────────────────────────────────────────
     val userId      = prefs.userId.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     val displayName = prefs.displayName.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     val avatarUrl   = prefs.avatarUrl.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     val isAdmin     = prefs.isAdmin.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val theme       = prefs.theme.stateIn(viewModelScope, SharingStarted.Eagerly, AppTheme.DARK)
+    val notifMsg    = prefs.notifMsg.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifSys    = prefs.notifSys.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifErr    = prefs.notifErr.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifSound  = prefs.notifSound.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifVib    = prefs.notifVib.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    // ── Settings ──────────────────────────────────────────────────────────────
-    val theme      = prefs.theme.stateIn(viewModelScope, SharingStarted.Eagerly, AppTheme.DARK)
-    val notifMsg   = prefs.notifMsg.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifSys   = prefs.notifSys.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifErr   = prefs.notifErr.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifSound = prefs.notifSound.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifVib   = prefs.notifVib.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-
-    // ── Live data ─────────────────────────────────────────────────────────────
     private val _chats = MutableStateFlow<List<ChatModel>>(emptyList())
     val chats: StateFlow<List<ChatModel>> = _chats
 
@@ -51,7 +47,6 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
     private val _messages = MutableStateFlow<List<MessageModel>>(emptyList())
     val messages: StateFlow<List<MessageModel>> = _messages
 
-    // Оптимистичные сообщения (isPending=true) пока Firestore не подтвердит
     private val _optimisticMessages = MutableStateFlow<List<MessageUiModel>>(emptyList())
     val optimisticMessages: StateFlow<List<MessageUiModel>> = _optimisticMessages
 
@@ -60,6 +55,9 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
 
     private val _deletedMessageIds = MutableStateFlow<Set<String>>(emptySet())
 
+    // БАГ ДУБЛИРОВАНИЯ FIX: единственный job для сообщений текущего чата
+    private var chatMessagesJob: Job? = null
+
     init {
         _authState.value = if (repo.isLoggedIn) AuthState.Auth else AuthState.NotAuth
         if (repo.isLoggedIn) startListeners()
@@ -67,32 +65,22 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
 
     private fun startListeners() {
         val uid = repo.currentUid ?: return
-        // Chats
         viewModelScope.launch {
             repo.getChatsFlow(uid).collect { list ->
-                Log.d(TAG, "Chats: ${list.size}")
-                _chats.value = list.sortedWith(compareByDescending<ChatModel> { it.pinned }.thenByDescending { it.lastMessageTime?.toDate()?.time ?: 0L })
+                _chats.value = list.sortedWith(
+                    compareByDescending<ChatModel> { it.pinned }
+                        .thenByDescending { it.lastMessageTime?.toDate()?.time ?: 0L }
+                )
             }
         }
-        // All users
+        viewModelScope.launch { repo.getAllUsersFlow().collect { _users.value = it } }
         viewModelScope.launch {
-            repo.getAllUsersFlow().collect { list ->
-                Log.d(TAG, "Users: ${list.size}")
-                _users.value = list
-            }
+            repo.getDeletedMessagesFlow().collect { ids -> _deletedMessageIds.value = ids.toSet() }
         }
-        // Deleted messages
-        viewModelScope.launch {
-            repo.getDeletedMessagesFlow().collect { ids ->
-                _deletedMessageIds.value = ids.toSet()
-            }
-        }
-        // Watch own user for ban/freeze
         viewModelScope.launch {
             repo.getUserFlow(uid).collect { user ->
-                if (user != null) {
-                    if (user.isBanned) _uiEvent.emit(UiEvent.Error("Аккаунт заблокирован: ${user.banReason}"))
-                }
+                if (user != null && user.isBanned)
+                    _uiEvent.emit(UiEvent.Error("Аккаунт заблокирован: ${user.banReason}"))
             }
         }
     }
@@ -125,29 +113,66 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
 
     fun logout() {
         viewModelScope.launch {
+            chatMessagesJob?.cancel()
+            chatMessagesJob = null
             repo.logout()
             prefs.clear()
             _authState.value = AuthState.NotAuth
-            _chats.value = emptyList(); _users.value = emptyList(); _messages.value = emptyList()
+            _chats.value = emptyList(); _users.value = emptyList()
+            _messages.value = emptyList(); _optimisticMessages.value = emptyList()
+            _currentChat.value = null
         }
     }
 
-    // ── Chat ─────────────────────────────────────────────────────────────────
+    fun changePassword(currentPassword: String, newPassword: String) {
+        viewModelScope.launch {
+            try {
+                val fbUser = FirebaseAuth.getInstance().currentUser
+                    ?: return@launch _uiEvent.emit(UiEvent.Error("Не авторизован"))
+                val email = fbUser.email
+                    ?: return@launch _uiEvent.emit(UiEvent.Error("Email не найден"))
+                if (newPassword.length < 6) {
+                    _uiEvent.emit(UiEvent.Error("Пароль минимум 6 символов")); return@launch
+                }
+                val cred = EmailAuthProvider.getCredential(email, currentPassword)
+                fbUser.reauthenticate(cred).await()
+                fbUser.updatePassword(newPassword).await()
+                _uiEvent.emit(UiEvent.Success("Пароль успешно изменён"))
+            } catch (e: Exception) {
+                val msg = when {
+                    "wrong-password" in (e.message ?: "") || "credential" in (e.message ?: "") -> "Неверный текущий пароль"
+                    "weak-password" in (e.message ?: "") -> "Пароль слишком простой"
+                    else -> "Ошибка: ${e.message?.take(80) ?: "неизвестно"}"
+                }
+                _uiEvent.emit(UiEvent.Error(msg))
+            }
+        }
+    }
+
+    // ── Chat ──────────────────────────────────────────────────────────────────
 
     fun openChat(chat: ChatModel) {
+        // ГЛАВНЫЙ ФИК ДУБЛИРОВАНИЯ: отменяем старый job, чистим стейт
+        chatMessagesJob?.cancel()
+        chatMessagesJob = null
         _currentChat.value = chat
         _optimisticMessages.value = emptyList()
-        viewModelScope.launch {
+        _messages.value = emptyList()
+
+        chatMessagesJob = viewModelScope.launch {
             repo.getMessagesFlow(chat.id).collect { list ->
                 val deleted = _deletedMessageIds.value
-                _messages.value = list.filter { it.id !in deleted }
-                // Убираем оптимистичные которые уже пришли из Firestore
-                val firestoreIds = list.map { it.id }.toSet()
-                _optimisticMessages.value = _optimisticMessages.value.filter { it.id !in firestoreIds }
-                // Mark as read
+                val filtered = list.filter { it.id !in deleted }
+                _messages.value = filtered
+                // Убираем pending у которых реальный id уже пришёл
+                val realIds = filtered.map { it.id }.toSet()
+                _optimisticMessages.value = _optimisticMessages.value.filter { it.id !in realIds }
+                // Отмечаем прочитанным
                 repo.currentUid?.let { uid ->
-                    list.lastOrNull()?.let { msg ->
-                        if (uid !in msg.readBy) repo.markAsRead(chat.id, msg.id, uid)
+                    filtered.lastOrNull()?.let { msg ->
+                        if (uid !in msg.readBy) {
+                            try { repo.markAsRead(chat.id, msg.id, uid) } catch (_: Exception) {}
+                        }
                     }
                 }
             }
@@ -156,31 +181,77 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
 
     fun sendMessage(chatId: String, text: String) {
         val uid = repo.currentUid ?: return
-        val dn = displayName.value
-        val av = avatarUrl.value
-        // Оптимистичное добавление
+        // Уникальный tempId чтобы не было коллизий
+        val tempId = "pending_${System.currentTimeMillis()}_${uid.take(4)}"
         val optimistic = MessageUiModel(
-            id = java.util.UUID.randomUUID().toString(),
-            chatId = chatId, senderId = uid, senderName = dn, senderAvatarUrl = av,
-            text = text, imageUrl = "", imageBase64 = "", replyToId = "", replyToText = "",
-            reactions = emptyMap(), readBy = emptyList(), isDeleted = false, isPinned = false,
+            id = tempId, chatId = chatId, senderId = uid,
+            senderName = displayName.value, senderAvatarUrl = avatarUrl.value,
+            text = text, imageUrl = "", imageBase64 = "",
+            replyToId = "", replyToText = "",
+            reactions = emptyMap(), readBy = emptyList(),
+            isDeleted = false, isPinned = false,
             timestamp = System.currentTimeMillis(), isPending = true
         )
         _optimisticMessages.value = _optimisticMessages.value + optimistic
         viewModelScope.launch {
-            try { repo.sendMessage(chatId, uid, dn, av, text) }
-            catch (e: Exception) {
-                _optimisticMessages.value = _optimisticMessages.value.filter { it.id != optimistic.id }
+            try {
+                repo.sendMessage(chatId, uid, displayName.value, avatarUrl.value, text)
+                // Убираем pending — Firestore вернёт реальное
+                _optimisticMessages.value = _optimisticMessages.value.filter { it.id != tempId }
+            } catch (e: Exception) {
+                _optimisticMessages.value = _optimisticMessages.value.filter { it.id != tempId }
                 _uiEvent.emit(UiEvent.Error("Ошибка отправки: ${e.message}"))
             }
         }
     }
 
-    fun sendImage(chatId: String, uri: Uri) {
+    // Отправка изображения как base64 — не использует Firebase Storage
+    fun sendImageBase64(chatId: String, uri: Uri, ctx: Context) {
         val uid = repo.currentUid ?: return
         viewModelScope.launch {
-            try { repo.uploadImageAndSend(chatId, uid, displayName.value, avatarUrl.value, uri) }
-            catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка отправки фото")) }
+            try {
+                val bytes = ctx.contentResolver.openInputStream(uri)?.readBytes()
+                    ?: return@launch _uiEvent.emit(UiEvent.Error("Не удалось прочитать файл"))
+                if (bytes.size > 600_000) {
+                    _uiEvent.emit(UiEvent.Error("Файл слишком большой (макс. ~600KB)"))
+                    return@launch
+                }
+                val mime = ctx.contentResolver.getType(uri) ?: "image/jpeg"
+                val ext = when { "png" in mime -> "png"; "gif" in mime -> "gif"; "webp" in mime -> "webp"; else -> "jpg" }
+                val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                // Формат: avatar://ext/base64data
+                val dataUri = "avatar://$ext/$b64"
+                repo.sendMessage(chatId, uid, displayName.value, avatarUrl.value, "", imageBase64 = dataUri)
+            } catch (e: Exception) {
+                _uiEvent.emit(UiEvent.Error("Ошибка отправки фото: ${e.message}"))
+            }
+        }
+    }
+
+    fun updateProfile(newName: String, uri: Uri?, ctx: Context) {
+        val uid = repo.currentUid ?: return
+        viewModelScope.launch {
+            try {
+                val updates = mutableMapOf<String, Any>("displayName" to newName.trim())
+                if (uri != null) {
+                    val bytes = ctx.contentResolver.openInputStream(uri)?.readBytes()
+                    if (bytes != null && bytes.size <= 200_000) {
+                        val mime = ctx.contentResolver.getType(uri) ?: "image/jpeg"
+                        val ext = if ("png" in mime) "png" else "jpg"
+                        val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                        updates["avatarUrl"] = "avatar://$ext/$b64"
+                    } else if (bytes != null) {
+                        _uiEvent.emit(UiEvent.Error("Аватар слишком большой (макс. ~150KB)"))
+                        return@launch
+                    }
+                }
+                repo.updateProfileMap(uid, updates)
+                prefs.saveUser(uid, userId.value, newName.trim(),
+                    updates["avatarUrl"] as? String ?: avatarUrl.value, isAdmin.value)
+                _uiEvent.emit(UiEvent.Success("Профиль обновлён"))
+            } catch (e: Exception) {
+                _uiEvent.emit(UiEvent.Error("Ошибка: ${e.message}"))
+            }
         }
     }
 
@@ -200,95 +271,60 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
         }
     }
 
-    fun pinMessage(chatId: String, messageId: String, text: String) {
+    fun pinMessage(chatId: String, messageId: String, text: String) =
         viewModelScope.launch { repo.pinMessage(chatId, messageId, text) }
-    }
 
     fun startDm(otherUser: UserModel) {
         val uid = repo.currentUid ?: return
         viewModelScope.launch {
-            try {
-                val chatId = repo.createDm(uid, otherUser.id, otherUser.displayName)
-                _uiEvent.emit(UiEvent.NavigateToChat(chatId))
-            } catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка создания чата")) }
+            try { _uiEvent.emit(UiEvent.NavigateToChat(repo.createDm(uid, otherUser.id, otherUser.displayName))) }
+            catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка создания чата")) }
         }
     }
 
     fun createGroup(name: String, memberIds: List<String>) {
         val uid = repo.currentUid ?: return
         viewModelScope.launch {
-            try {
-                val chatId = repo.createGroup(name, memberIds, uid)
-                _uiEvent.emit(UiEvent.NavigateToChat(chatId))
-            } catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка создания группы")) }
+            try { _uiEvent.emit(UiEvent.NavigateToChat(repo.createGroup(name, memberIds, uid))) }
+            catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка создания группы")) }
         }
     }
 
-    // ── Profile ───────────────────────────────────────────────────────────────
-
-    fun updateProfile(newName: String, uri: Uri?, ctx: Context) {
-        val uid = repo.currentUid ?: return
-        viewModelScope.launch {
-            val ok = repo.updateProfile(uid, newName, uri)
-            if (ok) {
-                prefs.saveUser(uid, userId.value, newName, avatarUrl.value, isAdmin.value)
-                _uiEvent.emit(UiEvent.Success("Профиль обновлён"))
-            } else _uiEvent.emit(UiEvent.Error("Ошибка обновления профиля"))
-        }
-    }
-
-    // ── Settings ──────────────────────────────────────────────────────────────
-
-    fun setTheme(t: AppTheme)          = viewModelScope.launch { prefs.saveTheme(t) }
-    fun setNotifMsg(v: Boolean)        = viewModelScope.launch { prefs.saveNotifMsg(v) }
-    fun setNotifSys(v: Boolean)        = viewModelScope.launch { prefs.saveNotifSys(v) }
-    fun setNotifErr(v: Boolean)        = viewModelScope.launch { prefs.saveNotifErr(v) }
-    fun setNotifSound(v: Boolean)      = viewModelScope.launch { prefs.saveNotifSound(v) }
-    fun setNotifVib(v: Boolean)        = viewModelScope.launch { prefs.saveNotifVib(v) }
+    fun setTheme(t: AppTheme)     = viewModelScope.launch { prefs.saveTheme(t) }
+    fun setNotifMsg(v: Boolean)   = viewModelScope.launch { prefs.saveNotifMsg(v) }
+    fun setNotifSys(v: Boolean)   = viewModelScope.launch { prefs.saveNotifSys(v) }
+    fun setNotifErr(v: Boolean)   = viewModelScope.launch { prefs.saveNotifErr(v) }
+    fun setNotifSound(v: Boolean) = viewModelScope.launch { prefs.saveNotifSound(v) }
+    fun setNotifVib(v: Boolean)   = viewModelScope.launch { prefs.saveNotifVib(v) }
 
     fun getCacheSize(ctx: Context): String {
-        val bytes = ctx.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-        return when {
-            bytes < 1024 -> "${bytes}B"
-            bytes < 1024*1024 -> "${bytes/1024}KB"
-            else -> "${bytes/1024/1024}MB"
-        }
+        val b = ctx.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        return when { b < 1024 -> "${b}B"; b < 1024*1024 -> "${b/1024}KB"; else -> "${b/1024/1024}MB" }
     }
-
-    fun clearCache(ctx: Context) {
-        ctx.cacheDir.deleteRecursively()
-        viewModelScope.launch { _uiEvent.emit(UiEvent.Success("Кэш очищен")) }
-    }
-
+    fun clearCache(ctx: Context) { ctx.cacheDir.deleteRecursively(); viewModelScope.launch { _uiEvent.emit(UiEvent.Success("Кэш очищен")) } }
     fun exportChats(ctx: Context) {
         viewModelScope.launch {
             try {
-                val sb = StringBuilder("[")
-                _chats.value.forEach { chat -> sb.append("""{"id":"${chat.id}","name":"${chat.name}"},""") }
-                if (sb.endsWith(",")) sb.deleteCharAt(sb.length - 1)
-                sb.append("]")
-                val file = java.io.File(ctx.getExternalFilesDir(null), "veryschool_export_${System.currentTimeMillis()}.json")
-                file.writeText(sb.toString())
-                _uiEvent.emit(UiEvent.Success("Экспортировано: ${file.absolutePath}"))
+                val json = "[" + _chats.value.joinToString(",") { """{"id":"${it.id}","name":"${it.name}"}""" } + "]"
+                val f = java.io.File(ctx.getExternalFilesDir(null), "vs_export_${System.currentTimeMillis()}.json")
+                f.writeText(json)
+                _uiEvent.emit(UiEvent.Success("Экспортировано: ${f.name}"))
             } catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка экспорта")) }
         }
     }
 
-    // ── Admin helpers ─────────────────────────────────────────────────────────
-
-    fun adminBan(targetId: String, reason: String)   = viewModelScope.launch { repo.banUser(repo.currentUid ?: return@launch, targetId, reason) }
-    fun adminUnban(targetId: String)                 = viewModelScope.launch { repo.unbanUser(repo.currentUid ?: return@launch, targetId) }
-    fun adminFreeze(targetId: String)                = viewModelScope.launch { repo.freezeUser(repo.currentUid ?: return@launch, targetId) }
-    fun adminUnfreeze(targetId: String)              = viewModelScope.launch { repo.unfreezeUser(repo.currentUid ?: return@launch, targetId) }
+    fun adminBan(targetId: String, reason: String)    = viewModelScope.launch { repo.banUser(repo.currentUid ?: return@launch, targetId, reason) }
+    fun adminUnban(targetId: String)                  = viewModelScope.launch { repo.unbanUser(repo.currentUid ?: return@launch, targetId) }
+    fun adminFreeze(targetId: String)                 = viewModelScope.launch { repo.freezeUser(repo.currentUid ?: return@launch, targetId) }
+    fun adminUnfreeze(targetId: String)               = viewModelScope.launch { repo.unfreezeUser(repo.currentUid ?: return@launch, targetId) }
     fun adminDeleteMsg(chatId: String, msgId: String) = viewModelScope.launch { repo.adminDeleteMessage(repo.currentUid ?: return@launch, chatId, msgId) }
-    fun adminBotBroadcast(text: String)              = viewModelScope.launch { repo.broadcastBotMessage(repo.currentUid ?: return@launch, text) }
-    fun adminBotToUser(uid: String, text: String)    = viewModelScope.launch { repo.sendBotMessage(uid, text) }
+    fun adminBotBroadcast(text: String)               = viewModelScope.launch { repo.broadcastBotMessage(repo.currentUid ?: return@launch, text) }
+    fun adminBotToUser(uid: String, text: String)     = viewModelScope.launch { repo.sendBotMessage(uid, text) }
 }
 
 class MainViewModelFactory(private val ctx: Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(mc: Class<T>): T {
-        val prefs = PrefsManager(ctx)
         @Suppress("UNCHECKED_CAST")
-        return MainViewModel(prefs) as T
+        return MainViewModel(PrefsManager(ctx)) as T
     }
 }

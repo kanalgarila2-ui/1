@@ -56,6 +56,8 @@ class AdminViewModel : ViewModel() {
 }
 
 class AdminViewModelFactory : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(mc: Class<T>): T = AdminViewModel() as T
+    override fun <T : ViewModel> create(mc: Class<T>): T {
+        @Suppress("UNCHECKED_CAST")
+        return AdminViewModel() as T
+    }
 }
