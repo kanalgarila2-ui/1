@@ -36,22 +36,25 @@ class MainActivity : ComponentActivity() {
             val theme by vm.theme.collectAsStateWithLifecycle()
             VerySchoolTheme(appTheme = theme) {
                 val nav = rememberNavController()
-                val authState   by vm.authState.collectAsStateWithLifecycle()
-                val currentUid  by vm.userId.collectAsStateWithLifecycle()
-                val displayName by vm.displayName.collectAsStateWithLifecycle()
-                val avatarUrl   by vm.avatarUrl.collectAsStateWithLifecycle()
-                val isAdmin     by vm.isAdmin.collectAsStateWithLifecycle()
-                val chats       by vm.chats.collectAsStateWithLifecycle()
-                val users       by vm.users.collectAsStateWithLifecycle()
-                val messages    by vm.messages.collectAsStateWithLifecycle()
-                val optimistic  by vm.optimisticMessages.collectAsStateWithLifecycle()
-                val currentChat by vm.currentChat.collectAsStateWithLifecycle()
-                val appTheme    by vm.theme.collectAsStateWithLifecycle()
-                val notifMsg    by vm.notifMsg.collectAsStateWithLifecycle()
-                val notifSys    by vm.notifSys.collectAsStateWithLifecycle()
-                val notifErr    by vm.notifErr.collectAsStateWithLifecycle()
-                val notifSound  by vm.notifSound.collectAsStateWithLifecycle()
-                val notifVib    by vm.notifVib.collectAsStateWithLifecycle()
+                val authState    by vm.authState.collectAsStateWithLifecycle()
+                val isLoading    by vm.isLoading.collectAsStateWithLifecycle()
+                val currentUid   by vm.userId.collectAsStateWithLifecycle()
+                val displayName  by vm.displayName.collectAsStateWithLifecycle()
+                val avatarUrl    by vm.avatarUrl.collectAsStateWithLifecycle()
+                val isAdmin      by vm.isAdmin.collectAsStateWithLifecycle()
+                val chats        by vm.chats.collectAsStateWithLifecycle()
+                val users        by vm.users.collectAsStateWithLifecycle()
+                val messages     by vm.messages.collectAsStateWithLifecycle()
+                val optimistic   by vm.optimisticMessages.collectAsStateWithLifecycle()
+                val currentChat  by vm.currentChat.collectAsStateWithLifecycle()
+                val appTheme     by vm.theme.collectAsStateWithLifecycle()
+                val notifMsg     by vm.notifMsg.collectAsStateWithLifecycle()
+                val notifSys     by vm.notifSys.collectAsStateWithLifecycle()
+                val notifErr     by vm.notifErr.collectAsStateWithLifecycle()
+                val notifSound   by vm.notifSound.collectAsStateWithLifecycle()
+                val notifVib     by vm.notifVib.collectAsStateWithLifecycle()
+                val unreadCounts by vm.unreadCounts.collectAsStateWithLifecycle()
+                val drafts       by vm.drafts.collectAsStateWithLifecycle()
 
                 LaunchedEffect(Unit) {
                     vm.uiEvent.collectLatest { event ->
@@ -60,10 +63,7 @@ class MainActivity : ComponentActivity() {
                             is UiEvent.Success -> Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_SHORT).show()
                             is UiEvent.NavigateToChat -> {
                                 val chat = chats.firstOrNull { it.id == event.chatId }
-                                if (chat != null) {
-                                    vm.openChat(chat)
-                                    nav.navigate(Nav.chat(event.chatId))
-                                }
+                                if (chat != null) { vm.openChat(chat); nav.navigate(Nav.chat(event.chatId)) }
                             }
                         }
                     }
@@ -82,7 +82,8 @@ class MainActivity : ComponentActivity() {
                     composable(Nav.AUTH) {
                         AuthScreen(
                             onLogin    = { e, p, ph -> vm.login(e, p, ph) },
-                            onRegister = { e, p, u, dn, ph -> vm.register(e, p, u, dn, ph) }
+                            onRegister = { e, p, u, dn, ph -> vm.register(e, p, u, dn, ph) },
+                            isLoading  = isLoading
                         )
                     }
 
@@ -90,6 +91,7 @@ class MainActivity : ComponentActivity() {
                         ChatListScreen(
                             chats = chats, users = users,
                             currentUserId = currentUid, displayName = displayName, avatarUrl = avatarUrl,
+                            unreadCounts = unreadCounts,
                             onChatClick = { chat -> vm.openChat(chat); nav.navigate(Nav.chat(chat.id)) },
                             onNewDm     = { user -> vm.startDm(user) },
                             onNewGroup  = { name, ids -> vm.createGroup(name, ids) },
@@ -109,12 +111,19 @@ class MainActivity : ComponentActivity() {
                             users = users, isAdmin = isAdmin,
                             onBack      = { nav.popBackStack() },
                             onSendText  = { vm.sendMessage(chatId, it) },
-                            // Отправка изображений через base64 — без Firebase Storage
                             onSendImage = { uri -> vm.sendImageBase64(chatId, uri, this@MainActivity) },
                             onReact     = { msgId, emoji -> vm.addReaction(chatId, msgId, emoji) },
                             onDelete    = { msgId -> vm.deleteMessage(chatId, msgId) },
                             onPin       = { msgId, text -> vm.pinMessage(chatId, msgId, text) },
-                            onUserClick = { uid -> nav.navigate(Nav.user(uid)) }
+                            onUserClick = { uid -> nav.navigate(Nav.user(uid)) },
+                            onForward   = { msg ->
+                                // Переслать в первый чат (не текущий) — простая реализация
+                                val target = chats.firstOrNull { it.id != chatId }
+                                if (target != null) vm.forwardMessage(msg, target.id)
+                                else Toast.makeText(this@MainActivity, "Нет других чатов", Toast.LENGTH_SHORT).show()
+                            },
+                            onSaveDraft = { vm.saveDraft(chatId, it) },
+                            draft       = drafts[chatId] ?: ""
                         )
                     }
 
@@ -140,7 +149,7 @@ class MainActivity : ComponentActivity() {
                             notifErr = notifErr, notifSound = notifSound, notifVib = notifVib,
                             cacheSize     = vm.getCacheSize(this@MainActivity),
                             onTheme       = vm::setTheme,
-                            onNotifMsg    = vm::setNotifMsg, onNotifSys = vm::setNotifSys,
+                            onNotifMsg    = vm::setNotifMsg, onNotifSys  = vm::setNotifSys,
                             onNotifErr    = vm::setNotifErr, onNotifSound = vm::setNotifSound,
                             onNotifVib    = vm::setNotifVib,
                             onClearCache  = { vm.clearCache(this@MainActivity) },

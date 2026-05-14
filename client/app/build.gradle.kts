@@ -5,16 +5,12 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.google.services)
 }
-
 android {
     namespace  = "com.veryschool.client"
     compileSdk = 34
     defaultConfig {
         applicationId = "com.veryschool.client"
-        minSdk        = 26
-        targetSdk     = 34
-        versionCode   = 2
-        versionName   = "2.0"
+        minSdk = 26; targetSdk = 34; versionCode = 3; versionName = "2.1"
     }
     signingConfigs {
         create("release") {
@@ -26,12 +22,11 @@ android {
     }
     buildTypes {
         release {
-            isMinifyEnabled   = true
-            isShrinkResources = true
-            signingConfig     = signingConfigs.getByName("release")
+            isMinifyEnabled = true; isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-        debug { /* no suffix - keeps com.veryschool.client */ }
+        debug { /* com.veryschool.client — no suffix */ }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
@@ -39,7 +34,6 @@ android {
     composeOptions { kotlinCompilerExtensionVersion = "1.5.3" }
     packaging { resources { excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/INDEX.LIST") } }
 }
-
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -53,13 +47,10 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons)
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
+    implementation(libs.room.runtime); implementation(libs.room.ktx); ksp(libs.room.compiler)
     implementation(libs.coil.compose)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
-    // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)

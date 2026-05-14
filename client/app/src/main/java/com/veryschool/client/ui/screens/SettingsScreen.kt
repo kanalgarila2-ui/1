@@ -38,43 +38,46 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             item { Spacer(Modifier.height(8.dp)) }
-
-            item { SectionLabel("🎨 Тема", tc.muted) }
+            item { SLabel("🎨 Тема", tc.muted) }
             item {
                 SCard(tc.surf) {
-                    Text("Выберите тему", color = tc.on, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 10.dp))
+                    Text("Выберите тему", color = tc.on, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(bottom = 10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(AppTheme.DARK to "Тёмная", AppTheme.LIGHT to "Светлая", AppTheme.SYSTEM to "Авто").forEach { (t, label) ->
-                            FilterChip(selected = theme == t, onClick = { onTheme(t) }, label = { Text(label, fontSize = 12.sp) },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = VSPrimary, selectedLabelColor = Color.White))
-                        }
+                        listOf(AppTheme.DARK to "Тёмная", AppTheme.LIGHT to "Светлая", AppTheme.SYSTEM to "Авто")
+                            .forEach { (t, label) ->
+                                FilterChip(selected = theme == t, onClick = { onTheme(t) },
+                                    label = { Text(label, fontSize = 12.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = VSPrimary, selectedLabelColor = Color.White))
+                            }
                     }
                 }
             }
-
-            item { SectionLabel("🔔 Уведомления", tc.muted) }
+            item { SLabel("🔔 Уведомления", tc.muted) }
             item {
                 SCard(tc.surf) {
-                    TogRow("Новые сообщения",       Icons.Default.Message,   notifMsg,   tc.on, tc.muted, onNotifMsg)
-                    TogRow("Системные (бан, заморозка)", Icons.Default.Shield, notifSys, tc.on, tc.muted, onNotifSys)
-                    TogRow("Ошибки синхронизации",  Icons.Default.Error,     notifErr,   tc.on, tc.muted, onNotifErr)
+                    Tog("Новые сообщения",           Icons.Default.Message,   notifMsg,   tc, onNotifMsg)
+                    Tog("Системные (бан, заморозка)", Icons.Default.Shield,    notifSys,   tc, onNotifSys)
+                    Tog("Ошибки синхронизации",       Icons.Default.Error,     notifErr,   tc, onNotifErr)
                     HorizontalDivider(color = tc.border, modifier = Modifier.padding(vertical = 4.dp))
-                    TogRow("Звук",      Icons.Default.VolumeUp,  notifSound, tc.on, tc.muted, onNotifSound)
-                    TogRow("Вибрация",  Icons.Default.Vibration, notifVib,   tc.on, tc.muted, onNotifVib)
+                    Tog("Звук",      Icons.Default.VolumeUp,  notifSound, tc, onNotifSound)
+                    Tog("Вибрация",  Icons.Default.Vibration, notifVib,   tc, onNotifVib)
                 }
             }
-
-            item { SectionLabel("💾 Данные", tc.muted) }
+            item { SLabel("💾 Данные", tc.muted) }
             item {
                 SCard(tc.surf) {
-                    ActRow("Очистить кэш ($cacheSize)", Icons.Default.Delete,   VSRed,     tc.on, onClearCache)
+                    Act("Очистить кэш ($cacheSize)", Icons.Default.Delete,   VSRed,     tc.on, onClearCache)
                     HorizontalDivider(color = tc.border, modifier = Modifier.padding(vertical = 4.dp))
-                    ActRow("Экспорт чатов (JSON)",      Icons.Default.Download, VSPrimary, tc.on, onExportChats)
+                    Act("Экспорт чатов (JSON)",      Icons.Default.Download, VSPrimary, tc.on, onExportChats)
                 }
             }
-
             item { Spacer(Modifier.height(80.dp)) }
         }
     }
@@ -85,19 +88,24 @@ fun SettingsScreen(
         Column(Modifier.padding(16.dp), content = content)
     }
 }
-@Composable private fun SectionLabel(text: String, color: Color) {
-    Text(text, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
+@Composable private fun SLabel(text: String, color: Color) {
+    Text(text, color = color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp))
 }
-@Composable private fun TogRow(label: String, icon: ImageVector, value: Boolean, on: Color, muted: Color, onToggle: (Boolean) -> Unit) {
+@Composable private fun Tog(label: String, icon: ImageVector, value: Boolean, tc: TC, onToggle: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = muted, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(10.dp))
-        Text(label, color = on, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        Switch(checked = value, onCheckedChange = onToggle, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = VSPrimary))
+        Icon(icon, null, tint = tc.muted, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(label, color = tc.on, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Switch(checked = value, onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = VSPrimary))
     }
 }
-@Composable private fun ActRow(label: String, icon: ImageVector, iconColor: Color, textColor: Color, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = iconColor, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(12.dp))
+@Composable private fun Act(label: String, icon: ImageVector, iconColor: Color, textColor: Color, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = iconColor, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
         Text(label, color = textColor, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         Icon(Icons.Default.ChevronRight, null, tint = textColor.copy(0.4f))
     }

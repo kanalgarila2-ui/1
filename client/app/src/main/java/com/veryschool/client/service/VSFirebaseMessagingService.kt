@@ -6,21 +6,15 @@ import com.veryschool.client.notifications.NotificationHelper
 
 class VSFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(msg: RemoteMessage) {
-        val notif = NotificationHelper(this)
-        val data = msg.data
-        when (data["type"]) {
-            "new_message" -> notif.showMessage(
-                data["sender"] ?: "VerySchool",
-                data["text"] ?: "Новое сообщение"
-            )
-            "banned"   -> notif.showBanned(data["reason"] ?: "")
-            "frozen"   -> notif.showFrozen(data["frozen"] == "true")
-            "unfrozen" -> notif.showFrozen(false)
-            else -> msg.notification?.let { notif.showMessage(it.title ?: "VerySchool", it.body ?: "") }
+        val n = NotificationHelper(this)
+        val d = msg.data
+        when (d["type"]) {
+            "new_message" -> n.showMessage(d["sender"] ?: "VerySchool", d["text"] ?: "Новое сообщение")
+            "banned"      -> n.showBanned(d["reason"] ?: "")
+            "frozen"      -> n.showFrozen(true)
+            "unfrozen"    -> n.showFrozen(false)
+            else          -> msg.notification?.let { n.showMessage(it.title ?: "VerySchool", it.body ?: "") }
         }
     }
-
-    override fun onNewToken(token: String) {
-        // Токен обновляется при следующем логине автоматически
-    }
+    override fun onNewToken(token: String) {}
 }

@@ -3,6 +3,7 @@ package com.veryschool.client.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +22,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.veryschool.client.data.models.UserModel
 import com.veryschool.client.ui.components.AvatarImage
 import com.veryschool.client.ui.theme.*
 
@@ -71,7 +73,8 @@ fun ProfileScreen(
                 AvatarImage(url = avatarUri?.toString() ?: avatarUrl, name = displayName, size = 100.dp)
                 Box(Modifier.size(30.dp).align(Alignment.BottomEnd), contentAlignment = Alignment.Center) {
                     Surface(shape = CircleShape, color = VSPrimary) {
-                        Icon(Icons.Default.PhotoCamera, null, tint = Color.White, modifier = Modifier.padding(5.dp).size(18.dp))
+                        Icon(Icons.Default.PhotoCamera, null, tint = Color.White,
+                            modifier = Modifier.padding(5.dp).size(18.dp))
                     }
                 }
             }
@@ -86,7 +89,8 @@ fun ProfileScreen(
             }
             Spacer(Modifier.height(20.dp))
 
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = tc.surf)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Tag, null, tint = VSSecondary, modifier = Modifier.size(16.dp))
@@ -106,16 +110,30 @@ fun ProfileScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            // Смена пароля
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = tc.surf)) {
                 Row(
                     Modifier.fillMaxWidth().clickable { showPasswordDialog = true }.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.Lock, null, tint = VSPrimary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text("Изменить пароль", color = tc.on, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Text("Изменить пароль", color = tc.on, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f))
                     Icon(Icons.Default.ChevronRight, null, tint = tc.muted)
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // ФИЧА: ссылка-упоминание
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Моя ссылка-упоминание", color = tc.muted, fontSize = 12.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("vs:///id=$userId", color = VSSecondary, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                    Text("Отправь в чате — другие нажмут и увидят твой профиль", color = tc.muted, fontSize = 11.sp)
                 }
             }
 
@@ -127,7 +145,7 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = VSRed),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VSRed)
+                border = BorderStroke(1.dp, VSRed)
             ) {
                 Icon(Icons.Default.Logout, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
@@ -137,7 +155,6 @@ fun ProfileScreen(
         }
     }
 
-    // Диалог выхода
     if (showLogout) {
         AlertDialog(
             onDismissRequest = { showLogout = false },
@@ -149,7 +166,6 @@ fun ProfileScreen(
         )
     }
 
-    // Диалог смены пароля
     if (showPasswordDialog) {
         ChangePasswordDialog(
             tc = tc,
@@ -167,12 +183,10 @@ private fun ChangePasswordDialog(tc: TC, onConfirm: (String, String) -> Unit, on
     var showCur by remember { mutableStateOf(false) }
     var showNew by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-
     val fc = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = VSPrimary, unfocusedBorderColor = tc.border,
         focusedTextColor = tc.on, unfocusedTextColor = tc.on, cursorColor = VSPrimary
     )
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Изменить пароль", color = tc.on, fontWeight = FontWeight.Bold) },
@@ -198,16 +212,14 @@ private fun ChangePasswordDialog(tc: TC, onConfirm: (String, String) -> Unit, on
                     modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(12.dp),
                     visualTransformation = PasswordVisualTransformation()
                 )
-                if (error.isNotEmpty()) {
-                    Text(error, color = VSRed, fontSize = 12.sp)
-                }
+                if (error.isNotEmpty()) Text(error, color = VSRed, fontSize = 12.sp)
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 when {
                     currentPass.isBlank() -> error = "Введите текущий пароль"
-                    newPass.length < 6    -> error = "Новый пароль минимум 6 символов"
+                    newPass.length < 6    -> error = "Минимум 6 символов"
                     newPass != confirmPass -> error = "Пароли не совпадают"
                     else -> onConfirm(currentPass, newPass)
                 }
@@ -221,12 +233,9 @@ private fun ChangePasswordDialog(tc: TC, onConfirm: (String, String) -> Unit, on
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserProfileScreen(
-    user: com.veryschool.client.data.models.UserModel,
-    isAdmin: Boolean,
-    onBack: () -> Unit,
-    onSendMessage: () -> Unit,
-    onBan: () -> Unit,
-    onFreeze: () -> Unit
+    user: UserModel, isAdmin: Boolean,
+    onBack: () -> Unit, onSendMessage: () -> Unit,
+    onBan: () -> Unit, onFreeze: () -> Unit
 ) {
     val tc = LocalTC.current
     Scaffold(
@@ -244,56 +253,49 @@ fun UserProfileScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(Modifier.height(16.dp))
-            AvatarImage(
-                url = user.avatarUrl, name = user.displayName, size = 100.dp,
+            AvatarImage(url = user.avatarUrl, name = user.displayName, size = 100.dp,
                 isFrozen = user.isFrozen, isDeleted = user.isDeleted || user.isBanned,
-                showOnline = true, isOnline = user.online
-            )
+                showOnline = true, isOnline = user.online)
             Spacer(Modifier.height(12.dp))
             Text(user.displayName, color = tc.on, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             Text("@${user.username}", color = tc.muted)
-            Text(
-                if (user.online) "🟢 онлайн" else "⚫ оффлайн",
-                color = if (user.online) VSGreen else tc.muted, fontSize = 13.sp
-            )
+            Text(if (user.online) "🟢 онлайн" else "⚫ оффлайн",
+                color = if (user.online) VSGreen else tc.muted, fontSize = 13.sp)
             if (user.isFrozen) Text("❄️ Заморожен", color = VSFrozen, fontSize = 12.sp)
             if (user.isBanned) Text("🚫 Заблокирован: ${user.banReason}", color = VSRed, fontSize = 12.sp)
-
             Spacer(Modifier.height(20.dp))
-            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = tc.surf)) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Упоминание:", color = tc.muted, fontSize = 12.sp)
                     Text("vs:///id=${user.id}", color = VSSecondary, fontWeight = FontWeight.Medium, fontSize = 12.sp)
                 }
             }
-
             if (isAdmin) {
                 Spacer(Modifier.height(12.dp))
-                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = tc.surf)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Действия администратора", color = tc.muted, fontSize = 12.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = onFreeze, modifier = Modifier.weight(1f),
+                            OutlinedButton(onClick = onFreeze, modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = VSFrozen),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, VSFrozen)
-                            ) { Text(if (user.isFrozen) "Разморозить" else "Заморозить", fontSize = 12.sp) }
-                            OutlinedButton(
-                                onClick = onBan, modifier = Modifier.weight(1f),
+                                border = BorderStroke(1.dp, VSFrozen)) {
+                                Text(if (user.isFrozen) "Разморозить" else "Заморозить", fontSize = 12.sp)
+                            }
+                            OutlinedButton(onClick = onBan, modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = VSRed),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, VSRed)
-                            ) { Text(if (user.isBanned) "Разбанить" else "Забанить", fontSize = 12.sp) }
+                                border = BorderStroke(1.dp, VSRed)) {
+                                Text(if (user.isBanned) "Разбанить" else "Забанить", fontSize = 12.sp)
+                            }
                         }
                     }
                 }
             }
-
             Spacer(Modifier.weight(1f))
-            Button(
-                onClick = onSendMessage, modifier = Modifier.fillMaxWidth().height(52.dp),
+            Button(onClick = onSendMessage, modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VSPrimary)
-            ) {
+                colors = ButtonDefaults.buttonColors(containerColor = VSPrimary)) {
                 Icon(Icons.Default.Send, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Написать сообщение", fontWeight = FontWeight.Bold)

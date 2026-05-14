@@ -1,6 +1,5 @@
 package com.veryschool.client.ui.screens
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,7 +19,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.veryschool.client.data.models.*
-import com.google.firebase.Timestamp
 import com.veryschool.client.ui.components.AvatarImage
 import com.veryschool.client.ui.theme.*
 import java.text.SimpleDateFormat
@@ -34,6 +32,7 @@ fun ChatListScreen(
     currentUserId: String,
     displayName: String,
     avatarUrl: String,
+    unreadCounts: Map<String, Int> = emptyMap(),
     onChatClick: (ChatModel) -> Unit,
     onNewDm: (UserModel) -> Unit,
     onNewGroup: (String, List<String>) -> Unit,
@@ -60,16 +59,21 @@ fun ChatListScreen(
             TopAppBar(
                 title = {
                     if (showSearch) {
-                        OutlinedTextField(
-                            value = searchQuery, onValueChange = { searchQuery = it },
-                            placeholder = { Text("Поиск...", color = tc.muted) },
-                            modifier = Modifier.fillMaxWidth(),
+                        OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it },
+                            placeholder = { Text("Поиск...", color = tc.muted) }, modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = VSPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on),
-                            shape = RoundedCornerShape(12.dp), singleLine = true
-                        )
+                            shape = RoundedCornerShape(12.dp), singleLine = true)
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("VerySchool", fontWeight = FontWeight.ExtraBold, color = VSPrimary, fontSize = 20.sp)
+                            // ФИЧА: общий счётчик непрочитанных
+                            val totalUnread = unreadCounts.values.sum()
+                            if (totalUnread > 0) {
+                                Spacer(Modifier.width(8.dp))
+                                Box(Modifier.size(18.dp).background(VSRed, CircleShape), contentAlignment = Alignment.Center) {
+                                    Text(if (totalUnread > 99) "99+" else "$totalUnread", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 },
@@ -78,9 +82,7 @@ fun ChatListScreen(
                         Icon(if (showSearch) Icons.Default.Close else Icons.Default.Search, null, tint = tc.on)
                     }
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, null, tint = tc.on) }
-                    IconButton(onClick = onProfile) {
-                        AvatarImage(url = avatarUrl, name = displayName, size = 32.dp)
-                    }
+                    IconButton(onClick = onProfile) { AvatarImage(url = avatarUrl, name = displayName, size = 32.dp) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = tc.surf)
             )
@@ -97,20 +99,11 @@ fun ChatListScreen(
         }
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-            // User search results
             if (matchingUsers.isNotEmpty()) {
-                item {
-                    Text("Пользователи", color = tc.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-                }
+                item { Text("Пользователи", color = tc.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) }
                 items(matchingUsers) { user ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onNewDm(user) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AvatarImage(url = user.avatarUrl, name = user.displayName, size = 44.dp,
-                            isFrozen = user.isFrozen, isDeleted = user.isDeleted || user.isBanned,
-                            showOnline = true, isOnline = user.online)
+                    Row(Modifier.fillMaxWidth().clickable { onNewDm(user) }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AvatarImage(url = user.avatarUrl, name = user.displayName, size = 44.dp, isFrozen = user.isFrozen, isDeleted = user.isDeleted || user.isBanned, showOnline = true, isOnline = user.online)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(user.displayName, color = tc.on, fontWeight = FontWeight.Medium)
@@ -135,26 +128,24 @@ fun ChatListScreen(
             }
 
             items(filteredChats, key = { it.id }) { chat ->
-                ChatListItem(chat = chat, currentUserId = currentUserId, onClick = { onChatClick(chat) })
+                ChatListItem(chat = chat, currentUserId = currentUserId,
+                    unreadCount = unreadCounts[chat.id] ?: 0,
+                    onClick = { onChatClick(chat) })
             }
             item { Spacer(Modifier.height(80.dp)) }
         }
     }
 
-    // New DM dialog
     if (showNewChat) {
         val otherUsers = users.filter { it.id != currentUserId && !it.isBanned && !it.isDeleted }
         var dmSearch by remember { mutableStateOf("") }
-        val filtered = if (dmSearch.isBlank()) otherUsers else otherUsers.filter {
-            it.username.contains(dmSearch, ignoreCase = true) || it.displayName.contains(dmSearch, ignoreCase = true)
-        }
+        val filtered = if (dmSearch.isBlank()) otherUsers else otherUsers.filter { it.username.contains(dmSearch, ignoreCase = true) || it.displayName.contains(dmSearch, ignoreCase = true) }
         AlertDialog(
             onDismissRequest = { showNewChat = false; dmSearch = "" },
             title = { Text("Написать сообщение", color = tc.on) },
             text = {
                 Column {
-                    OutlinedTextField(value = dmSearch, onValueChange = { dmSearch = it },
-                        placeholder = { Text("Поиск...", color = tc.muted) }, modifier = Modifier.fillMaxWidth(),
+                    OutlinedTextField(value = dmSearch, onValueChange = { dmSearch = it }, placeholder = { Text("Поиск...", color = tc.muted) }, modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = VSPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on),
                         shape = RoundedCornerShape(10.dp), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null, tint = tc.muted) })
                     Spacer(Modifier.height(8.dp))
@@ -163,13 +154,8 @@ fun ChatListScreen(
                     }
                     LazyColumn(Modifier.heightIn(max = 300.dp)) {
                         items(filtered) { user ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { onNewDm(user); showNewChat = false; dmSearch = "" }
-                                    .padding(vertical = 10.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                AvatarImage(url = user.avatarUrl, name = user.displayName, size = 40.dp,
-                                    showOnline = true, isOnline = user.online)
+                            Row(Modifier.fillMaxWidth().clickable { onNewDm(user); showNewChat = false; dmSearch = "" }.padding(vertical = 10.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                AvatarImage(url = user.avatarUrl, name = user.displayName, size = 40.dp, showOnline = true, isOnline = user.online)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(user.displayName, color = tc.on, fontWeight = FontWeight.Medium)
@@ -186,7 +172,6 @@ fun ChatListScreen(
         )
     }
 
-    // New Group dialog
     if (showNewGroup) {
         CreateGroupDialog(
             users = users.filter { it.id != currentUserId && !it.isBanned && !it.isDeleted },
@@ -197,27 +182,37 @@ fun ChatListScreen(
 }
 
 @Composable
-private fun ChatListItem(chat: ChatModel, currentUserId: String, onClick: () -> Unit) {
+private fun ChatListItem(chat: ChatModel, currentUserId: String, unreadCount: Int, onClick: () -> Unit) {
     val tc = LocalTC.current
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box {
             AvatarImage(url = chat.avatarUrl, name = chat.name, size = 52.dp)
-            if (chat.pinned) Box(Modifier.size(16.dp).background(VSYellow, CircleShape).align(Alignment.TopEnd), contentAlignment = Alignment.Center) {
-                Text("📌", fontSize = 8.sp)
-            }
+            if (chat.pinned) Box(Modifier.size(16.dp).background(VSYellow, CircleShape).align(Alignment.TopEnd), contentAlignment = Alignment.Center) { Text("📌", fontSize = 8.sp) }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    Text(chat.name, color = tc.on, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(chat.name, color = tc.on, fontWeight = if (unreadCount > 0) FontWeight.ExtraBold else FontWeight.SemiBold,
+                        fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (chat.isGroup) { Spacer(Modifier.width(4.dp)); Icon(Icons.Default.Group, null, tint = tc.muted, modifier = Modifier.size(14.dp)) }
                     if (chat.isBot) { Spacer(Modifier.width(4.dp)); Text("🤖", fontSize = 12.sp) }
                 }
-                Text(formatChatTime(chat.lastMessageTime?.toDate()?.time ?: 0L), color = tc.muted, fontSize = 11.sp)
+                Text(formatChatTime(chat.lastMessageTime?.toDate()?.time ?: 0L), color = if (unreadCount > 0) VSPrimary else tc.muted, fontSize = 11.sp)
             }
             Spacer(Modifier.height(2.dp))
-            Text(chat.lastMessage.ifEmpty { "Нет сообщений" }, color = tc.muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(chat.lastMessage.ifEmpty { "Нет сообщений" }, color = tc.muted, fontSize = 13.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // ФИЧА: счётчик непрочитанных в строке чата
+                if (unreadCount > 0) {
+                    Spacer(Modifier.width(4.dp))
+                    Box(Modifier.sizeIn(minWidth = 20.dp, minHeight = 20.dp).background(VSPrimary, CircleShape).padding(horizontal = 4.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center) {
+                        Text(if (unreadCount > 99) "99+" else "$unreadCount", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
     HorizontalDivider(color = tc.border.copy(0.4f), modifier = Modifier.padding(start = 80.dp))
@@ -231,7 +226,6 @@ fun CreateGroupDialog(users: List<UserModel>, onCreate: (String, List<String>) -
     var search by remember { mutableStateOf("") }
     val filtered = if (search.isBlank()) users else users.filter { it.displayName.contains(search, ignoreCase = true) || it.username.contains(search, ignoreCase = true) }
     val fc = OutlinedTextFieldDefaults.colors(focusedBorderColor = VSPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on)
-
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Создать группу", color = tc.on) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

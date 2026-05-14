@@ -67,15 +67,6 @@ jobs:
           KEY_ALIAS:     ${{ secrets.KEY_ALIAS }}
           KEY_PASS:      ${{ secrets.KEY_PASS }}
 
-      #- name: Build Client AAB (release)
-       # if: github.ref == 'refs/heads/main'
-        #run: gradle -p client bundleRelease --no-daemon
-        #env:
-         # KEYSTORE_PATH: keystore.jks
-          #KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
-          #KEY_ALIAS:     ${{ secrets.KEY_ALIAS }}
-          #KEY_PASS:      ${{ secrets.KEY_PASS }}
-
       - name: Build Server APK (debug)
         run: gradle -p server clean assembleDebug --no-daemon --stacktrace
 
@@ -83,9 +74,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VerySchool-Client-APK
-          path: |
-            client/app/build/outputs/apk/debug/app-debug.apk
-            client/app/build/outputs/bundle/release/app-release.aab
+          path: client/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: warn
 
       - name: Upload Server APK

@@ -10,6 +10,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.veryschool.server.ui.AdminViewModel
 import com.veryschool.server.ui.AdminViewModelFactory
+import com.veryschool.server.ui.AdminEvent
 import com.veryschool.server.ui.screens.AdminDashboard
 import com.veryschool.server.ui.screens.AdminLoginScreen
 import com.veryschool.server.ui.theme.VSAdminTheme
@@ -22,19 +23,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             VSAdminTheme {
                 val vm: AdminViewModel = viewModel(factory = AdminViewModelFactory())
-                val isLoggedIn by vm.isLoggedIn.collectAsStateWithLifecycle()
-                val users by vm.users.collectAsStateWithLifecycle()
-                val chats by vm.chats.collectAsStateWithLifecycle()
-                val logs by vm.logs.collectAsStateWithLifecycle()
-                val passphrases by vm.passphrases.collectAsStateWithLifecycle()
+                val isLoggedIn   by vm.isLoggedIn.collectAsStateWithLifecycle()
+                val users        by vm.users.collectAsStateWithLifecycle()
+                val chats        by vm.chats.collectAsStateWithLifecycle()
+                val logs         by vm.logs.collectAsStateWithLifecycle()
+                val passphrases  by vm.passphrases.collectAsStateWithLifecycle()
 
                 LaunchedEffect(Unit) {
                     vm.event.collectLatest { event ->
                         when (event) {
-                            is com.veryschool.server.ui.AdminEvent.Error ->
-                                Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_LONG).show()
-                            is com.veryschool.server.ui.AdminEvent.Success ->
-                                Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_SHORT).show()
+                            is AdminEvent.Error   -> Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_LONG).show()
+                            is AdminEvent.Success -> Toast.makeText(this@MainActivity, event.msg, Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
