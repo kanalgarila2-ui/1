@@ -53,6 +53,18 @@ class MainActivity : ComponentActivity() {
                 val notifErr     by vm.notifErr.collectAsStateWithLifecycle()
                 val notifSound   by vm.notifSound.collectAsStateWithLifecycle()
                 val notifVib     by vm.notifVib.collectAsStateWithLifecycle()
+                val notifPreview by vm.notifPreview.collectAsStateWithLifecycle()
+                val notifGroups  by vm.notifGroups.collectAsStateWithLifecycle()
+                val bubbleStyle  by vm.bubbleStyle.collectAsStateWithLifecycle()
+                val fontSize     by vm.fontSize.collectAsStateWithLifecycle()
+                val chatBg       by vm.chatBg.collectAsStateWithLifecycle()
+                val timeFormat   by vm.timeFormat.collectAsStateWithLifecycle()
+                val compactMode  by vm.compactMode.collectAsStateWithLifecycle()
+                val hideOnline   by vm.hideOnline.collectAsStateWithLifecycle()
+                val hideRead     by vm.hideRead.collectAsStateWithLifecycle()
+                val hideStatus   by vm.hideStatus.collectAsStateWithLifecycle()
+                val autoDownload by vm.autoDownload.collectAsStateWithLifecycle()
+                val sendQuality  by vm.sendQuality.collectAsStateWithLifecycle()
                 val unreadCounts by vm.unreadCounts.collectAsStateWithLifecycle()
                 val drafts       by vm.drafts.collectAsStateWithLifecycle()
 
@@ -109,10 +121,19 @@ class MainActivity : ComponentActivity() {
                             currentUserId = currentUid,
                             currentUserFrozen = me?.isFrozen ?: false,
                             users = users, isAdmin = isAdmin,
+                            bubbleStyle = bubbleStyle, fontSize = fontSize,
+                            chatBg = chatBg, timeFormat = timeFormat,
                             onBack      = { nav.popBackStack() },
                             onSendText  = { vm.sendMessage(chatId, it) },
                             onSendImage = { uri -> vm.sendImageBase64(chatId, uri, this@MainActivity) },
-                            onReact     = { msgId, emoji -> vm.addReaction(chatId, msgId, emoji) },
+                            onSendPoll  = { q, opts -> vm.sendPoll(chatId, q, opts) },
+                            onSendWithExpiry = { txt, sec -> vm.sendMessageWithExpiry(chatId, txt, sec) },
+                            onReact     = { msgId, emoji ->
+                                if (emoji.startsWith("poll:")) {
+                                    val idx = emoji.removePrefix("poll:").toIntOrNull() ?: return@ChatScreen
+                                    vm.votePoll(chatId, msgId, idx)
+                                } else vm.addReaction(chatId, msgId, emoji)
+                            },
                             onDelete    = { msgId -> vm.deleteMessage(chatId, msgId) },
                             onPin       = { msgId, text -> vm.pinMessage(chatId, msgId, text) },
                             onUserClick = { uid -> nav.navigate(Nav.user(uid)) },
@@ -135,8 +156,11 @@ class MainActivity : ComponentActivity() {
                             displayName = me?.displayName ?: displayName,
                             avatarUrl = me?.avatarUrl ?: avatarUrl,
                             isAdmin = isAdmin,
+                            statusEmoji = me?.statusEmoji ?: "",
+                            statusText = me?.statusText ?: "",
                             onBack           = { nav.popBackStack() },
                             onSave           = { dn, uri -> vm.updateProfile(dn, uri, this@MainActivity) },
+                            onSaveStatus     = { emoji, text -> vm.updateStatus(emoji, text) },
                             onChangePassword = { cur, nw -> vm.changePassword(cur, nw) },
                             onLogout         = { vm.logout() },
                             onSettings       = { nav.navigate(Nav.SETTINGS) }
@@ -145,13 +169,27 @@ class MainActivity : ComponentActivity() {
 
                     composable(Nav.SETTINGS) {
                         SettingsScreen(
-                            theme = appTheme, notifMsg = notifMsg, notifSys = notifSys,
-                            notifErr = notifErr, notifSound = notifSound, notifVib = notifVib,
+                            theme = appTheme, bubbleStyle = bubbleStyle, fontSize = fontSize,
+                            chatBg = chatBg, timeFormat = timeFormat, compactMode = compactMode,
+                            notifMsg = notifMsg, notifSys = notifSys, notifErr = notifErr,
+                            notifSound = notifSound, notifVib = notifVib,
+                            notifPreview = notifPreview, notifGroups = notifGroups,
+                            hideOnline = hideOnline, hideRead = hideRead, hideStatus = hideStatus,
+                            autoDownload = autoDownload, sendQuality = sendQuality,
                             cacheSize     = vm.getCacheSize(this@MainActivity),
                             onTheme       = vm::setTheme,
-                            onNotifMsg    = vm::setNotifMsg, onNotifSys  = vm::setNotifSys,
-                            onNotifErr    = vm::setNotifErr, onNotifSound = vm::setNotifSound,
-                            onNotifVib    = vm::setNotifVib,
+                            onBubbleStyle = vm::setBubbleStyle,
+                            onFontSize    = vm::setFontSize,
+                            onChatBg      = vm::setChatBg,
+                            onTimeFormat  = vm::setTimeFormat,
+                            onCompactMode = vm::setCompactMode,
+                            onNotifMsg    = vm::setNotifMsg, onNotifSys     = vm::setNotifSys,
+                            onNotifErr    = vm::setNotifErr, onNotifSound   = vm::setNotifSound,
+                            onNotifVib    = vm::setNotifVib, onNotifPreview = vm::setNotifPreview,
+                            onNotifGroups = vm::setNotifGroups,
+                            onHideOnline  = vm::setHideOnline, onHideRead   = vm::setHideRead,
+                            onHideStatus  = vm::setHideStatus,
+                            onAutoDownload = vm::setAutoDownload, onSendQuality = vm::setSendQuality,
                             onClearCache  = { vm.clearCache(this@MainActivity) },
                             onExportChats = { vm.exportChats(this@MainActivity) },
                             onBack        = { nav.popBackStack() }

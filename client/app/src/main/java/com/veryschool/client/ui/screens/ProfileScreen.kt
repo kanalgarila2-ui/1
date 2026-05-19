@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,8 +32,10 @@ import com.veryschool.client.ui.theme.*
 fun ProfileScreen(
     userId: String, username: String, displayName: String,
     avatarUrl: String, isAdmin: Boolean,
+    statusEmoji: String = "", statusText: String = "",
     onBack: () -> Unit,
     onSave: (String, Uri?) -> Unit,
+    onSaveStatus: ((emoji: String, text: String) -> Unit)? = null,
     onChangePassword: (String, String) -> Unit,
     onLogout: () -> Unit,
     onSettings: () -> Unit
@@ -42,7 +45,10 @@ fun ProfileScreen(
     var avatarUri by remember { mutableStateOf<Uri?>(null) }
     var showLogout by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
+    var editStatusEmoji by remember(statusEmoji) { mutableStateOf(statusEmoji) }
+    var editStatusText by remember(statusText) { mutableStateOf(statusText) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { avatarUri = it }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     val fc = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = VSPrimary, unfocusedBorderColor = tc.border,
         focusedTextColor = tc.on, unfocusedTextColor = tc.on, cursorColor = VSPrimary
@@ -126,14 +132,49 @@ fun ProfileScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            // ФИЧА: ссылка-упоминание
+            // ФИЧА: ссылка-упоминание (тап копирует в буфер)
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = tc.surf)) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Моя ссылка-упоминание", color = tc.muted, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text("vs:///id=$userId", color = VSSecondary, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    Text("Отправь в чате — другие нажмут и увидят твой профиль", color = tc.muted, fontSize = 11.sp)
+                    val link = "vs:///id=$userId"
+                    Text(link, color = VSSecondary, fontWeight = FontWeight.Medium, fontSize = 13.sp,
+                        modifier = Modifier.clickable { clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(link)) })
+                    Text("Нажми чтобы скопировать. Другие нажмут и увидят твой профиль.", color = tc.muted, fontSize = 11.sp)
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // ФИЧА: статус пользователя
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Мой статус", color = tc.muted, fontSize = 12.sp)
+                    val statusEmojis = listOf("","🎮","🎵","📚","💤","🏃","🍕","✈️","💻","🎯","😎","🤔")
+                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(statusEmojis.size) { idx ->
+                            val e = statusEmojis[idx]
+                            Surface(shape = RoundedCornerShape(8.dp),
+                                color = if (editStatusEmoji == e) VSPrimary.copy(0.3f) else tc.card,
+                                modifier = Modifier.clickable { editStatusEmoji = e }.size(36.dp),
+                                contentColor = tc.on) {
+                                Box(contentAlignment = Alignment.Center) { Text(if (e.isEmpty()) "✕" else e, fontSize = 18.sp) }
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = editStatusText, onValueChange = { editStatusText = it },
+                        placeholder = { Text("Текст статуса...", color = tc.muted) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = VSPrimary, unfocusedBorderColor = tc.border, focusedTextColor = tc.on, unfocusedTextColor = tc.on, cursorColor = VSPrimary)
+                    )
+                    Button(onClick = { onSaveStatus?.invoke(editStatusEmoji, editStatusText) },
+                        shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(containerColor = VSPrimary)) {
+                        Text("Сохранить статус", color = Color.White)
+                    }
                 }
             }
 

@@ -3,49 +3,71 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function isAuth() { return request.auth != null; }
-    function isAdmin() {
-      return isAuth() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+    function isAdmin() {
+      return isAuth() && userDoc().get('isAdmin', false) == true;
+    }
+    // Безопасная проверка — не падает если документ ещё не создан
     function isBanned() {
       return isAuth() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isBanned', false) == true;
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        userDoc().get('isBanned', false) == true;
     }
     function isFrozen() {
       return isAuth() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isFrozen', false) == true;
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        userDoc().get('isFrozen', false) == true;
     }
 
+    // Фразы входа — читает кто угодно (нужно ДО авторизации при регистрации)
     match /passphrases/{docId} {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // Пользователи
     match /users/{userId} {
       allow read: if isAuth();
-      allow create: if request.auth.uid == userId;
+      // create: любой авторизованный может создать свой документ (регистрация)
+      allow create: if isAuth() && request.auth.uid == userId;
       allow update: if (request.auth.uid == userId && !isBanned()) || isAdmin();
       allow delete: if isAdmin();
     }
+
+    // Чаты
     match /chats/{chatId} {
       allow read: if isAuth() && request.auth.uid in resource.data.members;
-      allow create: if isAuth() && !isBanned() && request.auth.uid in request.resource.data.members;
-      allow update: if isAuth() && request.auth.uid in resource.data.members && !isBanned();
+      // create: не забанен (проверка безопасная — exists)
+      allow create: if isAuth() && !isBanned() &&
+        request.auth.uid in request.resource.data.members;
+      allow update: if isAuth() &&
+        request.auth.uid in resource.data.members && !isBanned();
       allow delete: if isAdmin();
     }
+
+    // Сообщения
     match /messages/{chatId}/msgs/{messageId} {
       allow read: if isAuth() &&
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+        request.auth.uid in
+          get(/databases/$(database)/documents/chats/$(chatId)).data.members;
       allow create: if isAuth() && !isBanned() && !isFrozen() &&
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members &&
+        request.auth.uid in
+          get(/databases/$(database)/documents/chats/$(chatId)).data.members &&
         request.resource.data.senderId == request.auth.uid;
-      // FIX #10: правильная проверка владельца
       allow update: if (request.auth.uid == resource.data.senderId && !isBanned()) || isAdmin();
       allow delete: if isAdmin();
     }
+
+    // Удалённые сообщения
     match /deleted_messages/{messageId} {
       allow read: if isAuth();
       allow write: if isAuth() && !isBanned();
     }
+
+    // Логи
     match /logs/{logId} {
       allow read: if isAdmin();
       allow create: if isAuth();

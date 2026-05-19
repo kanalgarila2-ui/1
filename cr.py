@@ -169,9 +169,9 @@ def build_module(name, module_path):
     start = time.time()
     gradlew = os.path.join(module_path, "gradlew.bat")
     if os.path.exists(gradlew):
-        run(f'"{gradlew}" assembleDebug --no-daemon --stacktrace', cwd=module_path)
+        run(f'"{gradlew}" clean assembleDebug --no-daemon --stacktrace', cwd=module_path)
     else:
-        run("gradle assembleDebug --no-daemon --stacktrace", cwd=module_path)
+        run("gradle clean assembleDebug --no-daemon --stacktrace", cwd=module_path)
     elapsed = time.time() - start
     print(f"  ✅ {name} собран за {elapsed:.0f} сек ({elapsed/60:.1f} мин)")
 

@@ -40,12 +40,24 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
     val displayName = prefs.displayName.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     val avatarUrl   = prefs.avatarUrl.stateIn(viewModelScope, SharingStarted.Eagerly, "")
     val isAdmin     = prefs.isAdmin.stateIn(viewModelScope, SharingStarted.Eagerly, false)
-    val theme       = prefs.theme.stateIn(viewModelScope, SharingStarted.Eagerly, AppTheme.DARK)
-    val notifMsg    = prefs.notifMsg.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifSys    = prefs.notifSys.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifErr    = prefs.notifErr.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifSound  = prefs.notifSound.stateIn(viewModelScope, SharingStarted.Eagerly, true)
-    val notifVib    = prefs.notifVib.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val theme        = prefs.theme.stateIn(viewModelScope, SharingStarted.Eagerly, AppTheme.DARK)
+    val bubbleStyle  = prefs.bubbleStyle.stateIn(viewModelScope, SharingStarted.Eagerly, BubbleStyle.ROUND)
+    val fontSize     = prefs.fontSize.stateIn(viewModelScope, SharingStarted.Eagerly, FontSize.MEDIUM)
+    val chatBg       = prefs.chatBg.stateIn(viewModelScope, SharingStarted.Eagerly, ChatBg.NONE)
+    val timeFormat   = prefs.timeFormat.stateIn(viewModelScope, SharingStarted.Eagerly, TimeFormat.H24)
+    val compactMode  = prefs.compactMode.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val notifMsg     = prefs.notifMsg.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifSys     = prefs.notifSys.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifErr     = prefs.notifErr.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifSound   = prefs.notifSound.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifVib     = prefs.notifVib.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifPreview = prefs.notifPreview.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val notifGroups  = prefs.notifGroups.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val hideOnline   = prefs.hideOnline.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val hideRead     = prefs.hideRead.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val hideStatus   = prefs.hideStatus.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val autoDownload = prefs.autoDownload.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val sendQuality  = prefs.sendQuality.stateIn(viewModelScope, SharingStarted.Eagerly, "MEDIUM")
 
     private val _chats = MutableStateFlow<List<ChatModel>>(emptyList())
     val chats: StateFlow<List<ChatModel>> = _chats
@@ -359,12 +371,57 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
         }
     }
 
-    fun setTheme(t: AppTheme)     = viewModelScope.launch { prefs.saveTheme(t) }
-    fun setNotifMsg(v: Boolean)   = viewModelScope.launch { prefs.saveNotifMsg(v) }
-    fun setNotifSys(v: Boolean)   = viewModelScope.launch { prefs.saveNotifSys(v) }
-    fun setNotifErr(v: Boolean)   = viewModelScope.launch { prefs.saveNotifErr(v) }
-    fun setNotifSound(v: Boolean) = viewModelScope.launch { prefs.saveNotifSound(v) }
-    fun setNotifVib(v: Boolean)   = viewModelScope.launch { prefs.saveNotifVib(v) }
+    fun updateStatus(emoji: String, text: String) {
+        val uid = repo.currentUid ?: return
+        viewModelScope.launch {
+            try {
+                repo.updateProfileMap(uid, mapOf("statusEmoji" to emoji, "statusText" to text))
+                _uiEvent.emit(UiEvent.Success("Статус обновлён"))
+            } catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка: ${e.message}")) }
+        }
+    }
+
+    fun sendPoll(chatId: String, question: String, options: List<String>) {
+        val uid = repo.currentUid ?: return
+        viewModelScope.launch {
+            try { repo.sendMessage(chatId, uid, displayName.value, avatarUrl.value, "",
+                isPoll = true, pollQuestion = question, pollOptions = options) }
+            catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка отправки опроса: ${e.message}")) }
+        }
+    }
+
+    fun sendMessageWithExpiry(chatId: String, text: String, expirySec: Int) {
+        val uid = repo.currentUid ?: return
+        viewModelScope.launch {
+            try { repo.sendMessage(chatId, uid, displayName.value, avatarUrl.value, text, expirySec = expirySec) }
+            catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка отправки: ${e.message}")) }
+        }
+    }
+
+    fun votePoll(chatId: String, messageId: String, optionIndex: Int) {
+        val uid = repo.currentUid ?: return
+        viewModelScope.launch {
+            try { repo.votePoll(chatId, messageId, uid, optionIndex) }
+            catch (e: Exception) { _uiEvent.emit(UiEvent.Error("Ошибка голосования")) }
+        }
+    }
+    fun setBubbleStyle(v: BubbleStyle) = viewModelScope.launch { prefs.saveBubbleStyle(v) }
+    fun setFontSize(v: FontSize)       = viewModelScope.launch { prefs.saveFontSize(v) }
+    fun setChatBg(v: ChatBg)           = viewModelScope.launch { prefs.saveChatBg(v) }
+    fun setTimeFormat(v: TimeFormat)   = viewModelScope.launch { prefs.saveTimeFormat(v) }
+    fun setCompactMode(v: Boolean)     = viewModelScope.launch { prefs.saveCompactMode(v) }
+    fun setNotifMsg(v: Boolean)        = viewModelScope.launch { prefs.saveNotifMsg(v) }
+    fun setNotifSys(v: Boolean)        = viewModelScope.launch { prefs.saveNotifSys(v) }
+    fun setNotifErr(v: Boolean)        = viewModelScope.launch { prefs.saveNotifErr(v) }
+    fun setNotifSound(v: Boolean)      = viewModelScope.launch { prefs.saveNotifSound(v) }
+    fun setNotifVib(v: Boolean)        = viewModelScope.launch { prefs.saveNotifVib(v) }
+    fun setNotifPreview(v: Boolean)    = viewModelScope.launch { prefs.saveNotifPreview(v) }
+    fun setNotifGroups(v: Boolean)     = viewModelScope.launch { prefs.saveNotifGroups(v) }
+    fun setHideOnline(v: Boolean)      = viewModelScope.launch { prefs.saveHideOnline(v) }
+    fun setHideRead(v: Boolean)        = viewModelScope.launch { prefs.saveHideRead(v) }
+    fun setHideStatus(v: Boolean)      = viewModelScope.launch { prefs.saveHideStatus(v) }
+    fun setAutoDownload(v: Boolean)    = viewModelScope.launch { prefs.saveAutoDownload(v) }
+    fun setSendQuality(v: String)      = viewModelScope.launch { prefs.saveSendQuality(v) }
 
     fun getCacheSize(ctx: Context): String {
         val b = ctx.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
