@@ -598,24 +598,25 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
         _chats.value.forEach { chat ->
             if (chat.name.contains(q, ignoreCase = true)) {
                 // Создаем заглушку сообщения для отображения чата в результатах
-                val dummyMsg = MessageUiModel(
-                    id = "dummy_${chat.id}",
-                    chatId = chat.id,
-                    senderId = "",
-                    senderName = chat.name,
-                    senderAvatarUrl = "",
-                    text = "Чат: ${chat.name}",
-                    imageUrl = "",
-                    imageBase64 = "",
-                    replyToId = "",
-                    replyToText = "",
-                    reactions = emptyMap(),
-                    readBy = emptyList(),
-                    isDeleted = false,
-                    isPinned = false,
-                    timestamp = System.currentTimeMillis(),
-                    isPending = false
-                )
+// Исправленный фрагмент для globalSearch
+            val dummyMsg = MessageUiModel(
+                id = "dummy_${chat.id}",
+                chatId = chat.id,
+                senderId = "",
+                senderName = chat.name,
+                senderAvatarUrl = "",
+                text = "Чат: ${chat.name}",
+                imageUrl = "",
+                imageBase64 = "",
+                replyToId = "",
+                replyToText = "",
+                reactions = emptyMap(),
+                readBy = emptyList(),
+                isDeleted = false,
+                isPinned = false,
+                timestamp = System.currentTimeMillis(),
+                isPending = false
+            )
                 results.add(chat to dummyMsg)
             }
         }
