@@ -33,12 +33,15 @@ fun ProfileScreen(
     userId: String, username: String, displayName: String,
     avatarUrl: String, isAdmin: Boolean,
     statusEmoji: String = "", statusText: String = "",
+    msgSentCount: Long = 0L,
+    nameHistory: List<String> = emptyList(),
     onBack: () -> Unit,
     onSave: (String, Uri?) -> Unit,
     onSaveStatus: ((emoji: String, text: String) -> Unit)? = null,
     onChangePassword: (String, String) -> Unit,
     onLogout: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onStarred: (() -> Unit)? = null
 ) {
     val tc = LocalTC.current
     var newName by remember(displayName) { mutableStateOf(displayName) }
@@ -131,6 +134,37 @@ fun ProfileScreen(
             }
 
             Spacer(Modifier.height(10.dp))
+
+            // Статистика (ФИЧА #19)
+            if (msgSentCount > 0 || nameHistory.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("$msgSentCount", color = VSPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text("сообщений", color = tc.muted, fontSize = 11.sp)
+                        }
+                        if (nameHistory.isNotEmpty()) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("${nameHistory.size}", color = VSSecondary, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                Text("имён", color = tc.muted, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Избранные сообщения (ФИЧА #3)
+            if (onStarred != null) {
+                Card(Modifier.fillMaxWidth().clickable { onStarred() }, shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = tc.surf)) {
+                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Star, null, tint = VSYellow, modifier = Modifier.size(22.dp))
+                        Text("Избранные сообщения", color = tc.on, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Icon(Icons.Default.ChevronRight, null, tint = tc.muted)
+                    }
+                }
+            }
 
             // ФИЧА: ссылка-упоминание (тап копирует в буфер)
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),

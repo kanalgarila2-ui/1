@@ -37,7 +37,15 @@ fun ChatListScreen(
     onNewDm: (UserModel) -> Unit,
     onNewGroup: (String, List<String>) -> Unit,
     onProfile: () -> Unit,
-    onSettings: () -> Unit
+    onSettings: () -> Unit,
+    onAbout: () -> Unit = {},
+    onPrivacy: () -> Unit = {},
+    onTerms: () -> Unit = {},
+    onGuidelines: () -> Unit = {},
+    onGlobalSearch: () -> Unit = {},
+    onStarred: () -> Unit = {},
+    onMuteChat: (String) -> Unit = {},
+    onArchiveChat: (String) -> Unit = {}
 ) {
     val tc = LocalTC.current
     var showNewChat by remember { mutableStateOf(false) }
@@ -78,11 +86,49 @@ fun ChatListScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showSearch = !showSearch; if (!showSearch) searchQuery = "" }) {
-                        Icon(if (showSearch) Icons.Default.Close else Icons.Default.Search, null, tint = tc.on)
+                    IconButton(onClick = { onGlobalSearch() }) {
+                        Icon(Icons.Default.Search, null, tint = tc.on)
                     }
-                    IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, null, tint = tc.on) }
+                    // Аватар для быстрого перехода в профиль
                     IconButton(onClick = onProfile) { AvatarImage(url = avatarUrl, name = displayName, size = 32.dp) }
+                    // Три точки — главное меню
+                    var showMainMenu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showMainMenu = true }) {
+                            Icon(Icons.Default.MoreVert, null, tint = tc.on)
+                        }
+                        DropdownMenu(expanded = showMainMenu, onDismissRequest = { showMainMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("⚙️  Настройки", color = tc.on) },
+                                onClick = { showMainMenu = false; onSettings() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("⭐  Избранное", color = tc.on) },
+                                onClick = { showMainMenu = false; onStarred() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("👤  Мой профиль", color = tc.on) },
+                                onClick = { showMainMenu = false; onProfile() }
+                            )
+                            HorizontalDivider(color = tc.border)
+                            DropdownMenuItem(
+                                text = { Text("ℹ️  О приложении", color = tc.on) },
+                                onClick = { showMainMenu = false; onAbout() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("🔒  Конфиденциальность", color = tc.on) },
+                                onClick = { showMainMenu = false; onPrivacy() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("📋  Правила использования", color = tc.on) },
+                                onClick = { showMainMenu = false; onTerms() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("👥  Правила сообщества", color = tc.on) },
+                                onClick = { showMainMenu = false; onGuidelines() }
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = tc.surf)
             )
@@ -252,7 +298,7 @@ fun CreateGroupDialog(users: List<UserModel>, onCreate: (String, List<String>) -
 }
 
 private fun formatChatTime(ts: Long): String {
-    if (ts == 0L) return ""
+    if (ts <= 0L) return ""
     val diff = System.currentTimeMillis() - ts
     return when {
         diff < 60_000 -> "сейчас"

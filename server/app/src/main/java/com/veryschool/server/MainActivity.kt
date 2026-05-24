@@ -23,11 +23,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             VSAdminTheme {
                 val vm: AdminViewModel = viewModel(factory = AdminViewModelFactory())
-                val isLoggedIn   by vm.isLoggedIn.collectAsStateWithLifecycle()
-                val users        by vm.users.collectAsStateWithLifecycle()
-                val chats        by vm.chats.collectAsStateWithLifecycle()
-                val logs         by vm.logs.collectAsStateWithLifecycle()
-                val passphrases  by vm.passphrases.collectAsStateWithLifecycle()
+                val isLoggedIn      by vm.isLoggedIn.collectAsStateWithLifecycle()
+                val isLoading       by vm.isLoading.collectAsStateWithLifecycle()
+                val users           by vm.users.collectAsStateWithLifecycle()
+                val chats           by vm.chats.collectAsStateWithLifecycle()
+                val logs            by vm.logs.collectAsStateWithLifecycle()
+                val passphrases     by vm.passphrases.collectAsStateWithLifecycle()
+                val globalSettings  by vm.globalSettings.collectAsStateWithLifecycle()
+                val userStats       by vm.userStats.collectAsStateWithLifecycle()
+                val chatStats       by vm.chatStats.collectAsStateWithLifecycle()
 
                 LaunchedEffect(Unit) {
                     vm.event.collectLatest { event ->
@@ -39,17 +43,34 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (!isLoggedIn) {
-                    AdminLoginScreen(onLogin = { e, p -> vm.login(e, p) })
+                    AdminLoginScreen(
+                        onLogin   = { e, p -> vm.login(e, p) },
+                        isLoading = isLoading
+                    )
                 } else {
                     AdminDashboard(
-                        users = users, chats = chats, logs = logs, passphrases = passphrases,
-                        onBan = vm::ban, onUnban = vm::unban,
-                        onFreeze = vm::freeze, onUnfreeze = vm::unfreeze,
-                        onDeleteUser = vm::deleteUser, onUpdateUser = vm::updateUser,
-                        onDeleteMsg = vm::deleteMessage,
-                        onBotToUser = vm::sendBotToUser, onBotBroadcast = vm::broadcastBot,
-                        onSavePassphrases = vm::savePassphrases,
-                        onOpenChat = { vm.openChatMessages(it) }
+                        users           = users,
+                        chats           = chats,
+                        logs            = logs,
+                        passphrases     = passphrases,
+                        globalSettings  = globalSettings,
+                        userStats       = userStats,
+                        chatStats       = chatStats,
+                        onBan           = { uid, reason -> vm.ban(uid, reason) },
+                        onUnban         = vm::unban,
+                        onFreeze        = vm::freeze,
+                        onUnfreeze      = vm::unfreeze,
+                        onDeleteUser    = vm::deleteUser,
+                        onUpdateUser    = vm::updateUser,
+                        onSetVerified   = vm::setVerified,
+                        onDeleteMsg     = vm::deleteMessage,
+                        onDeleteChat    = vm::deleteChat,
+                        onBotToUser     = vm::sendBotToUser,
+                        onBotBroadcast  = vm::broadcastBot,
+                        onSavePassphrases    = vm::savePassphrases,
+                        onSaveGlobalSettings = vm::saveGlobalSettings,
+                        onOpenChat      = { vm.openChatMessages(it) },
+                        onRefreshStats  = vm::refreshStats
                     )
                 }
             }

@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 sealed class AdminEvent {
-    data class Error(val msg: String) : AdminEvent()
+    data class Error(val msg: String)   : AdminEvent()
     data class Success(val msg: String) : AdminEvent()
 }
 
@@ -21,6 +21,9 @@ class AdminViewModel : ViewModel() {
     private val _isLoggedIn = MutableStateFlow(repo.isLoggedIn)
     val isLoggedIn: StateFlow<Boolean> = _isLoggedIn
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
     val users = repo.getUsersFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val chats = repo.getChatsFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val logs  = repo.getLogsFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -31,25 +34,43 @@ class AdminViewModel : ViewModel() {
     private val _passphrases = MutableStateFlow<List<String>>(emptyList())
     val passphrases: StateFlow<List<String>> = _passphrases
 
-    // FIX #6: отменяем предыдущий collect
+    // GlobalSettings
+    val globalSettings = repo.getGlobalSettingsFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, GlobalSettings())
+
+    private val _userStats = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val userStats: StateFlow<Map<String, Int>> = _userStats
+
+    private val _chatStats = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val chatStats: StateFlow<Map<String, Int>> = _chatStats
+
     private var messagesJob: Job? = null
 
     init {
-        if (repo.isLoggedIn) viewModelScope.launch { _passphrases.value = repo.getPassphrases() }
+        if (repo.isLoggedIn) {
+            viewModelScope.launch {
+                _passphrases.value = repo.getPassphrases()
+                repo.initGlobalSettingsIfNeeded()
+                loadStats()
+            }
+        }
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        messagesJob?.cancel()
-    }
+    override fun onCleared() { super.onCleared(); messagesJob?.cancel() }
 
     fun login(email: String, password: String) = viewModelScope.launch {
+        _isLoading.value = true
         val (ok, err) = repo.loginAdmin(email, password)
-        if (ok) { _isLoggedIn.value = true; _passphrases.value = repo.getPassphrases(); _event.emit(AdminEvent.Success("Добро пожаловать!")) }
-        else _event.emit(AdminEvent.Error(err))
+        _isLoading.value = false
+        if (ok) {
+            _isLoggedIn.value = true
+            _passphrases.value = repo.getPassphrases()
+            repo.initGlobalSettingsIfNeeded()
+            loadStats()
+            _event.emit(AdminEvent.Success("Добро пожаловать!"))
+        } else _event.emit(AdminEvent.Error(err))
     }
 
-    // FIX #6: отменяем старый job перед новым
     fun openChatMessages(chatId: String) {
         messagesJob?.cancel()
         _messages.value = emptyList()
@@ -58,16 +79,62 @@ class AdminViewModel : ViewModel() {
         }
     }
 
-    fun ban(uid: String, reason: String)   = viewModelScope.launch { try { repo.banUser(uid, reason); _event.emit(AdminEvent.Success("Заблокирован")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun unban(uid: String)                 = viewModelScope.launch { try { repo.unbanUser(uid); _event.emit(AdminEvent.Success("Разблокирован")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun freeze(uid: String)                = viewModelScope.launch { try { repo.freezeUser(uid); _event.emit(AdminEvent.Success("Заморожен")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun unfreeze(uid: String)              = viewModelScope.launch { try { repo.unfreezeUser(uid); _event.emit(AdminEvent.Success("Разморожен")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun deleteUser(uid: String)            = viewModelScope.launch { try { repo.deleteUser(uid); _event.emit(AdminEvent.Success("Удалён")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun deleteMessage(chatId: String, msgId: String) = viewModelScope.launch { try { repo.deleteMessage(chatId, msgId) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun updateUser(uid: String, updates: Map<String, Any>) = viewModelScope.launch { try { repo.updateUser(uid, updates) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun sendBotToUser(uid: String, text: String) = viewModelScope.launch { try { repo.sendBotMessage(uid, text); _event.emit(AdminEvent.Success("Отправлено")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun broadcastBot(text: String)         = viewModelScope.launch { try { repo.broadcastBotMessage(text); _event.emit(AdminEvent.Success("Broadcast отправлен")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
-    fun savePassphrases(list: List<String>) = viewModelScope.launch { try { repo.savePassphrases(list); _passphrases.value = list; _event.emit(AdminEvent.Success("Фразы сохранены")) } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) } }
+    private fun loadStats() = viewModelScope.launch {
+        try { _userStats.value = repo.getUserStats() } catch (_: Exception) {}
+        try { _chatStats.value = repo.getChatStats() } catch (_: Exception) {}
+    }
+
+    fun refreshStats() = loadStats()
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+
+    fun ban(uid: String, reason: String)   = launch { repo.banUser(uid, reason); ok("Заблокирован") }
+    fun unban(uid: String)                 = launch { repo.unbanUser(uid); ok("Разблокирован") }
+    fun freeze(uid: String)                = launch { repo.freezeUser(uid); ok("Заморожен") }
+    fun unfreeze(uid: String)              = launch { repo.unfreezeUser(uid); ok("Разморожен") }
+    fun deleteUser(uid: String)            = launch { repo.deleteUser(uid); ok("Удалён") }
+    fun updateUser(uid: String, updates: Map<String, Any>) = launch { repo.updateUser(uid, updates); ok("Обновлено") }
+    fun setVerified(uid: String, v: Boolean) = launch { repo.setVerified(uid, v); ok(if (v) "✓ Верифицирован" else "Снята верификация") }
+
+    // ── Chats ─────────────────────────────────────────────────────────────────
+
+    fun deleteMessage(chatId: String, msgId: String) = launch { repo.deleteMessage(chatId, msgId) }
+    fun deleteChat(chatId: String) = launch { repo.deleteChat(chatId); ok("Чат удалён") }
+    fun pinChat(chatId: String, pinned: Boolean) = launch { repo.pinChat(chatId, pinned) }
+
+    // ── BOT ───────────────────────────────────────────────────────────────────
+
+    fun sendBotToUser(uid: String, text: String) = launch { repo.sendBotMessage(uid, text); ok("Отправлено") }
+    fun broadcastBot(text: String)               = launch { repo.broadcastBotMessage(text); ok("Broadcast отправлен всем") }
+
+    // ── Passphrases ───────────────────────────────────────────────────────────
+
+    fun savePassphrases(list: List<String>) = launch {
+        repo.savePassphrases(list); _passphrases.value = list; ok("Фразы сохранены")
+    }
+
+    // ── GlobalSettings ────────────────────────────────────────────────────────
+
+    fun saveGlobalSettings(settings: GlobalSettings) = launch {
+        repo.saveGlobalSettings(settings); ok("✅ Настройки сохранены в Firestore")
+    }
+
+    fun setMaintenanceMode(enabled: Boolean, message: String) = launch {
+        repo.setMaintenanceMode(enabled, message)
+        ok(if (enabled) "⚠️ Режим обслуживания включён" else "✅ Режим обслуживания выключен")
+    }
+
+    fun setAnnouncement(enabled: Boolean, text: String) = launch {
+        repo.setAnnouncement(enabled, text)
+        ok(if (enabled) "📢 Объявление активно" else "Объявление скрыто")
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun launch(block: suspend () -> Unit) = viewModelScope.launch {
+        try { block() } catch (e: Exception) { _event.emit(AdminEvent.Error(e.message ?: "Ошибка")) }
+    }
+    private suspend fun ok(msg: String) = _event.emit(AdminEvent.Success(msg))
 }
 
 class AdminViewModelFactory : ViewModelProvider.Factory {

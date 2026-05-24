@@ -24,6 +24,9 @@ import com.veryschool.client.ui.theme.VSFrozen
 import com.veryschool.client.ui.theme.VSPrimary
 import com.veryschool.client.ui.theme.VSRed
 
+// Добавлен цвет VSGreen
+private val VSGreen = Color(0xFF00C853)
+
 @Composable
 fun AvatarImage(
     url: String,
@@ -48,7 +51,13 @@ fun AvatarImage(
             }
         }
         if (showOnline) {
-            Box(Modifier.size(size * 0.28f).align(Alignment.BottomEnd).background(if (isOnline) VSFrozen else Color.Gray, CircleShape).border(1.5.dp, Color.Black, CircleShape))
+            Box(
+                Modifier
+                    .size(size * 0.28f)
+                    .align(Alignment.BottomEnd)
+                    .background(if (isOnline) VSGreen else Color.Gray, CircleShape)
+                    .border(1.5.dp, Color.Black, CircleShape)
+            )
         }
     }
 }
@@ -72,8 +81,7 @@ fun AvatarImage(
     val bitmap = remember(dataUri) {
         try {
             val parts = dataUri.removePrefix("avatar://").split("/", limit = 2)
-            if (parts.size == 2) BitmapFactory.decodeByteArray(Base64.decode(parts[1], Base64.NO_WRAP), 0, Base64.decode(parts[1], Base64.NO_WRAP).size)?.asImageBitmap()
-            else null
+            if (parts.size == 2) { val b = Base64.decode(parts[1], Base64.NO_WRAP); BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap() } else null
         } catch (_: Exception) { null }
     }
     if (bitmap != null) {

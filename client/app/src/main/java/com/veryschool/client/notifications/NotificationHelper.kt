@@ -67,7 +67,7 @@ class NotificationHelper(private val ctx: Context) {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
-    private fun nid() = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+    private fun nid() = (System.currentTimeMillis() % Int.MAX_VALUE).toInt().and(Int.MAX_VALUE)
 
     fun showMessage(sender: String, text: String, showPreview: Boolean = true, useSound: Boolean = true, useVib: Boolean = true) {
         val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)

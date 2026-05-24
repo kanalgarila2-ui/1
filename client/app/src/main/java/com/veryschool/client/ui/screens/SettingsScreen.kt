@@ -53,6 +53,10 @@ fun SettingsScreen(
     onAutoDownload: (Boolean) -> Unit, onSendQuality: (String) -> Unit,
     // Данные
     onClearCache: () -> Unit, onExportChats: () -> Unit,
+    onAbout: () -> Unit = {},
+    onPrivacy: () -> Unit = {},
+    onTerms: () -> Unit = {},
+    onGuidelines: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val tc = LocalTC.current
@@ -199,19 +203,21 @@ fun SettingsScreen(
             item { SLabel("ℹ️ О приложении", tc.muted) }
             item {
                 SCard(tc.surf) {
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, null, tint = tc.muted, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("VerySchool", color = tc.on, fontWeight = FontWeight.SemiBold)
-                            Text("Версия 2.1 • Firebase Messenger", color = tc.muted, fontSize = 12.sp)
-                        }
-                    }
+                    Act("О приложении", Icons.Default.Info, VSPrimary, tc.on, onAbout)
                     Div(tc)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Act("Политика конфиденциальности", Icons.Default.Lock, VSSecondary, tc.on, onPrivacy)
+                    Div(tc)
+                    Act("Правила использования", Icons.Default.Description, tc.muted, tc.on, onTerms)
+                    Div(tc)
+                    Act("Правила сообщества", Icons.Default.Group, tc.muted, tc.on, onGuidelines)
+                    Div(tc)
+                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Security, null, tint = VSGreen, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(12.dp))
-                        Text("Все данные хранятся в Firebase Firestore", color = tc.muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Column(Modifier.weight(1f)) {
+                            Text("VerySchool v2.1.0", color = tc.on, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Данные в Firebase Firestore • Kotlin + Jetpack Compose", color = tc.muted, fontSize = 11.sp)
+                        }
                     }
                 }
             }
