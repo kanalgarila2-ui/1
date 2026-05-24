@@ -593,25 +593,33 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
         }
         val q = query.lowercase()
         val results = mutableListOf<Pair<ChatModel, MessageUiModel>>()
-    
+
     // Поиск в чатах по имени
         _chats.value.forEach { chat ->
             if (chat.name.contains(q, ignoreCase = true)) {
-            // Создаем заглушку сообщения для отображения чата в результатах
+                // Создаем заглушку сообщения для отображения чата в результатах
                 val dummyMsg = MessageUiModel(
                     id = "dummy_${chat.id}",
-                    text = "Чат: ${chat.name}",
                     chatId = chat.id,
                     senderId = "",
-                    senderName = "",
+                    senderName = chat.name,
+                    senderAvatarUrl = "",
+                    text = "Чат: ${chat.name}",
+                    imageUrl = "",
+                    imageBase64 = "",
+                    replyToId = "",
+                    replyToText = "",
+                    reactions = emptyMap(),
+                    readBy = emptyList(),
+                    isDeleted = false,
+                    isPinned = false,
                     timestamp = System.currentTimeMillis(),
-                    type = MessageType.SYSTEM,
-                    starredBy = emptyList()
+                    isPending = false
                 )
                 results.add(chat to dummyMsg)
             }
         }
-    
+
     // Поиск в сообщениях
         _messages.value.forEach { msg ->
             if (msg.text.contains(q, ignoreCase = true)) {
@@ -621,10 +629,9 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
                 }
             }
         }
-    
+
         _globalSearchResults.value = results
     }
-
 // ── Редактирование сообщения ─────────────────────────────────────────
     fun editMessage(chatId: String, messageId: String, newText: String) {
         viewModelScope.launch {
@@ -758,17 +765,21 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
 fun MessageModel.toUi(): MessageUiModel {
     return MessageUiModel(
         id = this.id,
-        text = this.text,
         chatId = this.chatId,
         senderId = this.senderId,
         senderName = this.senderName,
-        senderAvatar = this.senderAvatar,
-        timestamp = this.timestamp,
-        type = this.type,
-        mediaUrl = this.mediaUrl,
-        starredBy = this.starredBy ?: emptyList(),
+        senderAvatarUrl = this.senderAvatarUrl,
+        text = this.text,
+        imageUrl = this.imageUrl,
+        imageBase64 = this.imageBase64,
         replyToId = this.replyToId,
-        replyToText = this.replyToText
+        replyToText = this.replyToText,
+        reactions = this.reactions ?: emptyMap(),
+        readBy = this.readBy ?: emptyList(),
+        isDeleted = this.isDeleted,
+        isPinned = this.isPinned,
+        timestamp = this.timestamp,
+        isPending = false
     )
 }
 
