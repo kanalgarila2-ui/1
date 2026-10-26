@@ -1,0 +1,47 @@
+# ===== Gradle =====
+.gradle/
+**/build/
+!**/src/**/build/
+gradle.properties
+local.properties
+
+# ===== Android =====
+*.apk
+*.aab
+*.ap_
+*.aab_
+*.dex
+*.class
+bin/
+gen/
+out/
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+server/app/build/*
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+.venv/
+
+# ===== OS junk =====
+.DS_Store
+Thumbs.db
+$RECYCLE.BIN/
+
+# ===== Backup & output =====
+backups/
+output/

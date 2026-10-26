@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() { return request.auth != null; }
+
+    function userExists() {
+      return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isAdmin() {
+      return userExists() && userDoc().get('isAdmin', false) == true;
+    }
+    function isBannedSafe() {
+      return userExists() && userDoc().get('isBanned', false) == true;
+    }
+    function isFrozenSafe() {
+      return userExists() && userDoc().get('isFrozen', false) == true;
+    }
+    function fieldUnchanged(field) {
+      return request.resource.data[field] == resource.data[field];
+    }
+
+    // ── Фразы входа ──────────────────────────────────────────────────────────
+    match /passphrases/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── Глобальные настройки ─────────────────────────────────────────────────
+    // Читать могут все авторизованные (клиент проверяет лимиты).
+    // Писать только админ.
+    match /global_settings/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Счётчики ─────────────────────────────────────────────────────────────
+    match /counters/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth();
+    }
+
+    // ── Пользователи ─────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.auth.uid == userId
+        && request.resource.data.get('isAdmin', false) == false
+        && request.resource.data.get('isBanned', false) == false
+        && request.resource.data.get('isFrozen', false) == false
+        && request.resource.data.displayName.size() >= 1
+        && request.resource.data.displayName.size() <= 60
+        && request.resource.data.username.size() >= 3
+        && request.resource.data.username.size() <= 30;
+      allow update: if (
+          request.auth.uid == userId
+          && !isBannedSafe()
+          && fieldUnchanged('isAdmin')
+          && fieldUnchanged('isBanned')
+          && fieldUnchanged('isFrozen')
+          && fieldUnchanged('numericId')
+        ) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Чаты ─────────────────────────────────────────────────────────────────
+    match /chats/{chatId} {
+      allow read: if isAuth() && request.auth.uid in resource.data.members;
+      allow create: if isAuth()
+        && !isBannedSafe()
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members.size() >= 2;
+      allow update: if (
+          isAuth()
+          && request.auth.uid in resource.data.members
+          && !isBannedSafe()
+        ) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Сообщения ────────────────────────────────────────────────────────────
+    match /messages/{chatId}/msgs/{messageId} {
+      allow read: if isAuth()
+        && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+      allow create: if isAuth()
+        && !isBannedSafe()
+        && !isFrozenSafe()
+        && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.get('text', '').size() <= 4000
+        && request.resource.data.get('pollOptions', []).size() <= 10;
+      allow update: if (
+          request.auth.uid == resource.data.senderId
+          && !isBannedSafe()
+          && fieldUnchanged('senderId')
+          && fieldUnchanged('chatId')
+        ) || (
+          isAuth()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+        ) || (
+          isAuth()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollVotes'])
+        ) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Typing ────────────────────────────────────────────────────────────────
+    match /typing/{chatId} {
+      allow read, write: if isAuth();
+    }
+
+    // ── Избранные сообщения ──────────────────────────────────────────────────
+    match /starred_messages/{starId} {
+      allow read:   if isAuth() && resource.data.userId == request.auth.uid;
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuth() && resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ── Удалённые сообщения ───────────────────────────────────────────────────
+    match /deleted_messages/{messageId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && !isBannedSafe() && !isFrozenSafe();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Логи ─────────────────────────────────────────────────────────────────
+    match /logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+  }
+}
