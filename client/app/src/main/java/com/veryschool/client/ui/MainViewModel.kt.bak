@@ -761,35 +761,6 @@ class MainViewModel(private val prefs: PrefsManager) : ViewModel() {
             }
         }
     }
-}
-
-fun MessageModel.toUi(): MessageUiModel {
-    return MessageUiModel(
-        id = this.id,
-        chatId = this.chatId,
-        senderId = this.senderId,
-        senderName = this.senderName,
-        senderAvatarUrl = this.senderAvatarUrl,
-        text = this.text,
-        imageUrl = this.imageUrl,
-        imageBase64 = this.imageBase64,
-        replyToId = this.replyToId,
-        replyToText = this.replyToText,
-        reactions = this.reactions ?: emptyMap(),
-        readBy = this.readBy ?: emptyList(),
-        isDeleted = this.isDeleted,
-        isPinned = this.isPinned,
-        timestamp = this.timestamp,
-        isPending = false
-    )
-}
-
-class MainViewModelFactory(private val ctx: Context) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(mc: Class<T>): T {
-        @Suppress("UNCHECKED_CAST")
-        return MainViewModel(PrefsManager(ctx)) as T
-    }
-}
 
     // ── ФИЧА #1: редактирование сообщения ────────────────────────────────────
     fun editMessage(chatId: String, messageId: String, newText: String) {
@@ -1003,3 +974,32 @@ class MainViewModelFactory(private val ctx: Context) : ViewModelProvider.Factory
     }
 
     // ── Архив ────────────────────────────────────────────────────────────────
+}
+
+fun MessageModel.toUi(): MessageUiModel {
+    return MessageUiModel(
+        id = this.id,
+        chatId = this.chatId,
+        senderId = this.senderId,
+        senderName = this.senderName,
+        senderAvatarUrl = this.senderAvatarUrl,
+        text = this.text,
+        imageUrl = this.imageUrl,
+        imageBase64 = this.imageBase64,
+        replyToId = this.replyToId,
+        replyToText = this.replyToText,
+        reactions = this.reactions ?: emptyMap(),
+        readBy = this.readBy ?: emptyList(),
+        isDeleted = this.isDeleted,
+        isPinned = this.isPinned,
+        timestamp = this.timestamp?.toDate()?.time ?: 0L,
+        isPending = false
+    )
+}
+
+class MainViewModelFactory(private val ctx: Context) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(mc: Class<T>): T {
+        @Suppress("UNCHECKED_CAST")
+        return MainViewModel(PrefsManager(ctx)) as T
+    }
+}
